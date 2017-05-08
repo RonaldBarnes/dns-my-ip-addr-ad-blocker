@@ -14,6 +14,8 @@ from struct import *
 class DNSquery:
 	qtypeCodes = {1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 13: "HINFO", 15: "MX", 16: "TXT"}
 
+	opCodes = {0: "Std Query", 2: "Status", 4: "Notify", 5: "Update"}
+
 
 	def __init__(self, query):
 
@@ -109,7 +111,7 @@ class DNSquery:
 			self.auth_rec_count = 0
 		print "CLASS: NEW auth_rec_count: ", self.auth_rec_count
 
-	def getHeader(self):
+	def printHeader(self):
 		print( "HEADER: \"%x%x%x%x%x%x%x\"" % (self.query_id \
 			, self.query_byte_3 \
 			, self.query_byte_4 \
@@ -118,8 +120,10 @@ class DNSquery:
 			, self.auth_rec_count \
 			, self.addl_rec_count \
 			))
-#		print "xyx=", xyz
-		xyz = pack( "!HBBhhhh", self.query_id \
+		print "Length header: ", len(xyz)
+
+	def getHeader(self):
+		xyz = pack( "!HBBHHHH", self.query_id \
 			, self.query_byte_3 \
 			, self.query_byte_4 \
 			, self.question_count \
@@ -127,13 +131,17 @@ class DNSquery:
 			, self.auth_rec_count \
 			, self.addl_rec_count \
 			)
-		print "Length header: ", len(xyz)
 		return xyz
 
 	##  HUH? AUTO-COMPLETE GAVE THIS:
 	## def t_DNSMessageHeaderandQuestionSectionFormat
 	def questionSection(self):
 		return self.questionName
+
+
+class DNSResponse(DNSquery):
+	def __init__(self):
+		print "DNSResponse CLASS!"
 
 
 
@@ -198,10 +206,11 @@ while(True):
 	query_byte_3 = query_header[2:3]
 
 	print("received data: client_ip: %s, %i bytes\nheader: \"%s\"" % (client_ip, len(data), repr(query_header) ) )
-	print("Received query data: \"%s\"" % repr(data) )
+#	print("Received query data: \"%s\"" % repr(data) )
 
 
 	x = DNSquery(data)
+	y = DNSResponse()
 	x.setResponseFlag()
 	x.recursionOff()
 	x.addAnswer()
@@ -221,10 +230,11 @@ while(True):
 	+ pack('!HHih', 1,1,34,4) \
 	+ pack('!iiii', 127,0,0,1) )
 	
-	s.sendto(x.getHeader() + x.questionSection() \
+	s.sendto(x.getHeader() \
+	+ x.questionSection() \
 	+ pack('!B', 2) + 'my' + pack('!B', 2) + 'ip' + pack('!B', 0) \
 	+ pack('!HHiH', 1,1,34,4) 
-	+ pack('iiii', 127,0,0,1), client_ip_port)
+	+ pack('BBBB', 127,0,0,1), client_ip_port)
 
 #	s.sendto(x.header() + "2" + "my" + pack('b', 2) + "ip" + pack('b', 0) + "1112349" + client_ip, client_ip_port)
 #	s.sendto(x.header(), client_ip_port)
