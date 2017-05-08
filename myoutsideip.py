@@ -12,7 +12,11 @@ from struct import *
 
 
 class DNSquery:
+	qtypeCodes = {1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 13: "HINFO", 15: "MX", 16: "TXT"}
+
+
 	def __init__(self, query):
+
 		self.query_header = query[:12]
 		self.query_id, = unpack('!H', self.query_header[:2] )
 		print "CLASS: query_id: ", self.query_id
@@ -20,14 +24,15 @@ class DNSquery:
 		self.query_byte_3 = self.query_header[2:3]
 		self.query_byte_3, = unpack('!B', self.query_byte_3)
 		## set response flag ON
-		self.response = self.query_byte_3 ^ 128
-		print "CLASS: byte 3 w/ response flag: ", format(self.response, '08b'), \
-			" derived from: ", format(self.query_byte_3, '08b')
-		self.query_byte_3 = self.response
+		# self.response = self.query_byte_3 ^ 128
+		print "CLASS: byte 3 w/ query/response flag:", format(self.query_byte_3, '08b')
+		# , \
+		#	" derived from: ", format(self.query_byte_3, '08b')
+		# self.query_byte_3 = self.response
 
 		self.query_byte_4 = self.query_header[3:4]
 		self.query_byte_4, = unpack('!B', self.query_byte_4)
-		print "CLASS: byte 4 w/ recursion flag: ", format(self.query_byte_4, '08b')
+		print "CLASS: byte 4 w/ recursion flag:", format(self.query_byte_4, '08b')
 
 		self.question_count = self.query_header[4:6]
 		self.question_count, = unpack('!H', self.question_count)
@@ -52,18 +57,30 @@ class DNSquery:
 		##
 		self.questionName = data[12:]
 		print "questionName: \"%s\"" % repr(self.questionName)
-		name1len, = unpack('b', self.questionName[0:1])
+		name1len, = unpack('B', self.questionName[0:1])
 		self.name1 = self.questionName[1:name1len + 1]
 		print "name1len: %d  name1: \"%s\"" % (name1len, self.name1)
-		name2len, = unpack('b', self.questionName[name1len+1:name1len+2])
-		self.name2 = self.questionName[name2len+2:name2len +2 + name2len]
+
+		name2len, = unpack('B', self.questionName[name1len+1:name1len+2])
+		self.name2 = self.questionName[name2len + 2:name2len + 2 + name2len]
 		print "name2len: %d  name2: \"%s\"" % (name2len, self.name2)
 		self.nullByte, = unpack('b', '\x00')
+
+		QType = self.questionName[name1len + name2len + 3:name1len + name2len + 3 + 2]
+		QClass = self.questionName[name1len + name2len + 3 + 2:name1len + name2len + 3 + 2 + 2]
+		print "QType (A vs MX): ", self.qtypeCodes[ unpack('!H', QType)[0]], " QClass (IN=1): ", unpack('!H', QClass)[0]
+
 		self.questionName = self.questionName[:name2len * 2 + 3 +4]
 		print "questionName TRIMMED (len: %d): \"%s\"" % (len(self.questionName), repr(self.questionName) )
 
+
 	def questionName(self):
 		return self.questionName
+
+	def setResponseFlag(self):
+		print "Response flag set: from: ", format(self.query_byte_3, '08b'),
+		self.query_byte_3 = self.query_byte_3 ^ 128
+		print " to: ", format(self.query_byte_3, '08b')
 
 	def recursionOff(self):
 		self.query_byte_4 = self.query_byte_4 ^ 128
@@ -92,7 +109,7 @@ class DNSquery:
 			self.auth_rec_count = 0
 		print "CLASS: NEW auth_rec_count: ", self.auth_rec_count
 
-	def header(self):
+	def getHeader(self):
 		print( "HEADER: \"%x%x%x%x%x%x%x\"" % (self.query_id \
 			, self.query_byte_3 \
 			, self.query_byte_4 \
@@ -109,7 +126,6 @@ class DNSquery:
 			, self.answer_count \
 			, self.auth_rec_count \
 			, self.addl_rec_count \
-#			, self.questionName \
 			)
 		print "Length header: ", len(xyz)
 		return xyz
@@ -182,41 +198,22 @@ while(True):
 	query_byte_3 = query_header[2:3]
 
 	print("received data: client_ip: %s, %i bytes\nheader: \"%s\"" % (client_ip, len(data), repr(query_header) ) )
+	print("Received query data: \"%s\"" % repr(data) )
 
 
 	x = DNSquery(data)
+	x.setResponseFlag()
 	x.recursionOff()
 	x.addAnswer()
 	x.subAdditional()
-	x.subAdditional()
 	x.subAuth()
 
-	zzz = x.header()
-	print "RETURN HEADER: \"", zzz, "\""
-
-##	print "CLASS: id= ", x.query_id
-
-#	print "\nQuery ID: \"%s\"" % unpack('!H', query_id)
-#	print "Query byte 3: \"%s\"" % repr(query_byte_3)
-#	tmp, = unpack('!b', query_byte_3)
-#	print "Query byte 3 binary: ", format( tmp, '08b')
-#	print "Query byte 3 int: ", tmp
-#
-#	query_or_response, = unpack('!b', query_byte_3 )
-#	query_or_response = tmp >> 7 #int(query_byte_3) >> 7
-#	print "Query or Response (0=query): \"%s\"" % query_or_response
-
-#	query_byte_4 = query_header[3:4]
-#	tmp, = unpack('b', query_byte_4)
-#	print "Query byte 4 binary: ", format( tmp, '08b')
-#	print "Query byte 4 int: ", tmp
-
-#	question_count = query_header[4:6]
-#	tmp, = unpack('!h', question_count)
-#	print "Question count: %d  binary: %s" % (tmp, format(tmp, '08b') )
+	zzz = x.getHeader()
+	# print "RETURN HEADER: \"", zzz, "\""
 
 
-	print("received data: \"%s\"" % repr(data) )
+
+
 
 	print '\n###\n' \
 	+ repr(pack('!b', 2) + 'my' + pack('!b', 2) + 'ip' \
@@ -224,11 +221,10 @@ while(True):
 	+ pack('!HHih', 1,1,34,4) \
 	+ pack('!iiii', 127,0,0,1) )
 	
-	s.sendto(x.header() + x.questionSection() , client_ip_port)
-#		  + \
-#		pack('!b', 2) + 'my' + pack('!b', 2) + 'ip' + pack('!b', 0) \
-#		+ pack('!hhi', 1,1,34) + '4' + pack('!iiii'
-#		, 127,0,0,1)
+	s.sendto(x.getHeader() + x.questionSection() \
+	+ pack('!B', 2) + 'my' + pack('!B', 2) + 'ip' + pack('!B', 0) \
+	+ pack('!HHiH', 1,1,34,4) 
+	+ pack('iiii', 127,0,0,1), client_ip_port)
 
 #	s.sendto(x.header() + "2" + "my" + pack('b', 2) + "ip" + pack('b', 0) + "1112349" + client_ip, client_ip_port)
 #	s.sendto(x.header(), client_ip_port)
