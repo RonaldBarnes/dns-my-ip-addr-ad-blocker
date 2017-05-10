@@ -52,32 +52,64 @@ class DNSquery:
 		self.addl_rec_count, = unpack('!H', self.addl_rec_count)
 		print "CLASS: addl_rec_count: ", self.addl_rec_count
 
-		## Question section ends with NULL (\x00):
-		## re-code to iterate through bytes until it's found!
-		## Stick name parts into array, could be > 2, i.e.
-		## www.ronaldbarnes.ca
+
+		## Question section ends with NULL (\x00) and has binary length
+		## bytes, so 0x03 would indicate next part is "www", for example:
 		##
 		self.questionName = data[12:]
-		print "questionName: \"%s\"" % repr(self.questionName)
-		name1len, = unpack('B', self.questionName[0:1])
-		self.name1 = self.questionName[1:name1len + 1]
-		print "name1len: %d  name1: \"%s\"" % (name1len, self.name1)
+		## print "questionName: \"%s\"" % repr(self.questionName)
 
-		name2len, = unpack('B', self.questionName[name1len+1:name1len+2])
-		self.name2 = self.questionName[name2len + 2:name2len + 2 + name2len]
-		print "name2len: %d  name2: \"%s\"" % (name2len, self.name2)
-		self.nullByte, = unpack('b', '\x00')
+		## Parse out "question name" i.e. domain for which info requested:
+		self.QNames = []
+		kounterNameParts = 0
+		offsetNamePart = 0
+		lenNamePart = 1
+		while(self.questionName[offsetNamePart:lenNamePart] != pack('B', 0) ):
+			## Get byte that indicates (in binary) length of next name part:
+			lenNamePart, = unpack('B', self.questionName[offsetNamePart:lenNamePart])
+			## Move pointers along the "question" to extract name part (i.e. www or google):
+			offsetNamePart += 1
+			lenNamePart += offsetNamePart
+			kounterNameParts += 1
+			## extract a name part:
+			self.QNames.append( self.questionName[offsetNamePart:lenNamePart] )
+#			print "NAME PART #", kounterNameParts, 
+#			print " from: ", offsetNamePart, " to: ", lenNamePart, 
+#			print " is: ", self.QNames
+			offsetNamePart = lenNamePart
+			lenNamePart += 1
+#			print "NEXT BYTE: ", repr(self.questionName[offsetNamePart:lenNamePart])
+#			if self.questionName[offsetNamePart:lenNamePart] == pack('B', 0):
+				## print "Question for ", ".".join(self.QNames)
+#				break
 
-		QType = self.questionName[name1len + name2len + 3:name1len + name2len + 3 + 2]
-		QClass = self.questionName[name1len + name2len + 3 + 2:name1len + name2len + 3 + 2 + 2]
-		print "QType (A vs MX): ", self.qtypeCodes[ unpack('!H', QType)[0]], " QClass (IN=1): ", unpack('!H', QClass)[0]
+		## QType is "A", "MX", "CNAME", ... 2 bytes used:
+		offsetNamePart += 1
+		lenNamePart += 2
+		self.QType = self.questionName[offsetNamePart:lenNamePart]
+		## QClass is "IN" in 99.999% of cases:
+		
+		offsetNamePart += 2
+		lenNamePart += 2
+		self.QClass = self.questionName[offsetNamePart:lenNamePart]
+		print "QType (A vs MX): ", self.qtypeCodes[ unpack('!H', self.QType)[0]], " QClass (IN=1): ", unpack('!H', self.QClass)[0]
 
-		self.questionName = self.questionName[:name2len * 2 + 3 +4]
+		self.questionName = self.questionName[:lenNamePart]
 		print "questionName TRIMMED (len: %d): \"%s\"" % (len(self.questionName), repr(self.questionName) )
 
 
 	def questionName(self):
+		## Return question to client:
 		return self.questionName
+
+	def getQuestionNameCanonical(self):
+		## Return READABLE question name for logging
+		## The binary lengths stripped, separators of "." added
+		return ".".join(self.QNames)
+
+	def getQNames(self):
+		return self.QNames
+
 
 	def setResponseFlag(self):
 		print "Response flag set: from: ", format(self.query_byte_3, '08b'),
@@ -111,6 +143,12 @@ class DNSquery:
 			self.auth_rec_count = 0
 		print "CLASS: NEW auth_rec_count: ", self.auth_rec_count
 
+	def NXDOMAIN(self):
+		print "CLASS: NXDOMAIN before:", self.query_byte_4,
+		self.query_byte_4 = self.query_byte_4 ^ 3
+		print "CLASS: NXDOMAIN after:", self.query_byte_4
+
+
 	def printHeader(self):
 		print( "HEADER: \"%x%x%x%x%x%x%x\"" % (self.query_id \
 			, self.query_byte_3 \
@@ -140,8 +178,49 @@ class DNSquery:
 
 
 class DNSResponse(DNSquery):
-	def __init__(self):
-		print "DNSResponse CLASS!"
+	def __init__(self,QNames):
+#		print "DNSResponse CLASS!"
+		print "Qnames:", QNames
+
+	def getResourceRecord(self, QNames, QType, QClass, QTTL, QAnswer):
+#		print "getResourceRecord! ==========================="
+#		print "Qnames:", QNames
+		print "QType:", repr(QType), " QClass:", repr(QClass)
+#		print "QAnswer:", repr(QAnswer)
+		returnString = ''
+		for oneName in QNames:
+			lenName = len(oneName)
+#			print "One NAME: %s  and length: %d" % (oneName, lenName)
+			returnString += pack("!B", lenName)
+			returnString += oneName
+		returnString += pack("!B", 0)
+		returnString += QType + QClass
+		returnString += pack("!i", QTTL)
+
+		## MX records get a 2-byte Preference value first:
+		if unpack('!H', QType)[0] == 15:
+			## Answer is NOT 4 octets of IP address but domain name in STD DNS 
+			## NAME format, with length bytes preceding each portion, and
+			## trailing NULL byte.
+			## ALSO, preceding all that is 2-byte Preference value which must
+			## be included in field length indicator
+			returnString += str(pack("!H", len('.'.join(QNames)) + 2 + 2 ) )
+			print "QType == MX, adding additional field to RR:", repr(QType)
+			returnString += pack('!H', 1)  ## Arbitrary Preference value = 1
+			for oneName in QNames:
+				lenName = len(oneName)
+				print "One NAME: %s  and length: %d" % (oneName, lenName)
+				returnString += pack("!B", lenName)
+				returnString += oneName
+			returnString += pack("!B", 0)
+		else:
+			returnString += pack("!H", 4)
+			for octet in QAnswer.split('.'):
+	#			print "OCTET:", octet
+				returnString += pack("!B", int(octet) )
+		print "RESOURCE RECORD RETURN len: %d  and VALUE: %s" % (len(returnString), repr(returnString))
+		return returnString
+
 
 
 
@@ -150,7 +229,7 @@ class DNSResponse(DNSquery):
 
 IP_ADDR = '127.0.0.1'
 IP_PORT = 53
-BUFFER_SIZE = 1024
+BUFFER_SIZE = 512
 
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -210,36 +289,68 @@ while(True):
 
 
 	x = DNSquery(data)
-	y = DNSResponse()
+#	x.NXDOMAIN()
 	x.setResponseFlag()
 	x.recursionOff()
 	x.addAnswer()
 	x.subAdditional()
 	x.subAuth()
 
+	y = DNSResponse(x.getQNames() )
+	# y.getResourceRecord(x.getQNames(), x.QType, x.QClass, 0, client_ip)
+
 	zzz = x.getHeader()
 	# print "RETURN HEADER: \"", zzz, "\""
+	print "Question is for:", x.getQuestionNameCanonical()
 
 
 
+
+
+	retval = x.getHeader() \
+	+ x.questionSection() \
+	+ y.getResourceRecord(x.getQNames(), x.QType, x.QClass, 1234, client_ip)
+
+#	print "RETVAL1: len: %d  value: %s" % (len(retval), repr(retval))
+
+	s.sendto(retval, client_ip_port)
+
+	raise SystemExit  ## aka: sys.exit but without import sys
 
 
 	print '\n###\n' \
-	+ repr(pack('!b', 2) + 'my' + pack('!b', 2) + 'ip' \
-	+ pack('!b', 0) \
-	+ pack('!HHih', 1,1,34,4) \
-	+ pack('!iiii', 127,0,0,1) )
-	
+	+ repr(pack('!B', 2) + 'my' + pack('!B', 2) + 'ip' \
+	+ pack('!B', 0) \
+	+ pack('!HHiH', 1,1,34,4) \
+	+ pack('!BBBB', 127,0,0,1) )
+
+
+	retval = x.getHeader() \
+	+ x.questionSection() \
+	+ pack('!B', 2) + 'my' + pack('!B', 2) + 'ip' + pack('!B', 3) + 'com' + pack('!B', 2) + 'uk' + pack('!B', 0) \
+	+ pack('!HHiH', 1,1,1234,4) \
+	+ pack('BBBB', 127,0,0,1)
+	print "RETVAL2: len: %d  value: %s" % (len(retval), repr(retval))
+
+
+
 	s.sendto(x.getHeader() \
 	+ x.questionSection() \
 	+ pack('!B', 2) + 'my' + pack('!B', 2) + 'ip' + pack('!B', 0) \
-	+ pack('!HHiH', 1,1,34,4) 
+	+ pack('!HHiH', 1,1,1234,4) \
 	+ pack('BBBB', 127,0,0,1), client_ip_port)
 
-#	s.sendto(x.header() + "2" + "my" + pack('b', 2) + "ip" + pack('b', 0) + "1112349" + client_ip, client_ip_port)
-#	s.sendto(x.header(), client_ip_port)
+
+	s.sendto(retval, client_ip_port)
+
+	s.sendto(x.getHeader() \
+	+ x.questionSection() \
+	+ y.getResourceRecord(x.getQNames(), x.QType, x.QClass, 34, client_ip) \
+	, client_ip_port)
 
 
-	raise SystemExit  ## aka: sys.exit but without import sys
+
+
+
 
 
