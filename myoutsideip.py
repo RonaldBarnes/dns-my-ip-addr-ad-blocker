@@ -5,14 +5,56 @@ import socket
 # from socket import *
 # import re
 from struct import *
-
+from sys import argv
 
 ## http://www.tcpipguide.com/free/t_DNSMessageHeaderandQuestionSectionFormat.htm
 
 
+## Logging default level:
+verbosityGlobal = 2
+
+##def logMessage(message, *positional_parameters, **keyword_parameters):
+##def logMessage(message, *positional_parameters, **keyword_parameters):
+def logMessage(msgwtf = None, verbwtf = None, **keywords):
+	verbosityLocal = None
+
+	#print "key: ", keywords
+
+	if ('msg' in keywords):
+		msg = keywords['msg']
+		# print 'MESSAGE: ', msg
+	elif (msgwtf == None):
+		print 'NO MESSAGE...'
+		return
+	else:
+		msg = msgwtf
+
+	if ('verb' in keywords):
+		verbosityLocal = keywords['verb']
+		# print 'VERB: ', verbosityLocal
+	elif (verbwtf == None):
+		verbosityLocal = verbosityGlobal
+	else:
+		verbosityLocal = verbwtf
+
+
+	if verbosityLocal <= verbosityGlobal:
+		print "(*) %s" % msg
+##		print "verbosity: %s  and msg: \"%s\"" % (verbosityLocal, msg)
+
+
+
+
+
 
 class DNSquery:
-	qtypeCodes = {1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 13: "HINFO", 15: "MX", 16: "TXT"}
+	qtypeCodes = {1: "A", 2: "NS",
+		5: "CNAME", 6: "SOA",
+		10: 'NULL',11: 'WKS', 
+		12: "PTR", 13: "HINFO",
+		15: "MX", 16: "TXT", 
+		33: 'SRV', 'AFXR': 252,
+		255: 'ANY'}
 
 	opCodes = {0: "Std Query", 2: "Status", 4: "Notify", 5: "Update"}
 
@@ -21,36 +63,42 @@ class DNSquery:
 
 		self.query_header = query[:12]
 		self.query_id, = unpack('!H', self.query_header[:2] )
-		print "CLASS: query_id: ", self.query_id
+		logMessage( msg="QID: " + str(self.query_id), verb=1)
 
 		self.query_byte_3 = self.query_header[2:3]
 		self.query_byte_3, = unpack('!B', self.query_byte_3)
 		## set response flag ON
 		# self.response = self.query_byte_3 ^ 128
-		print "CLASS: byte 3 w/ query/response flag:", format(self.query_byte_3, '08b')
+		logMessage( msg="byte 3 w/ query/response flag:" +
+			 format(self.query_byte_3, '08b'), verb=3)
 		# , \
 		#	" derived from: ", format(self.query_byte_3, '08b')
 		# self.query_byte_3 = self.response
 
 		self.query_byte_4 = self.query_header[3:4]
 		self.query_byte_4, = unpack('!B', self.query_byte_4)
-		print "CLASS: byte 4 w/ recursion flag:", format(self.query_byte_4, '08b')
+		logMessage(msg="byte 4 w/ recursion flag:"
+			 + format(self.query_byte_4, '08b'), verb=3)
 
 		self.question_count = self.query_header[4:6]
 		self.question_count, = unpack('!H', self.question_count)
-		print "CLASS: question_count: ", self.question_count
+		logMessage(msg="question_count: " 
+			 + str(self.question_count), verb=3)
 
 		self.answer_count = self.query_header[6:8]
 		self.answer_count, = unpack('!H', self.answer_count)
-		print "CLASS: answer_count: ", self.answer_count
+		logMessage(msg="answer_count: " 
+			 + str(self.answer_count), verb=4)
 
 		self.auth_rec_count = self.query_header[8:10]
 		self.auth_rec_count, = unpack('!H', self.auth_rec_count)
-		print "CLASS: auth_rec_count: ", self.auth_rec_count
+		logMessage(msg="auth_rec_count: "
+			 + str(self.auth_rec_count), verb=4)
 
 		self.addl_rec_count = self.query_header[10:12]
 		self.addl_rec_count, = unpack('!H', self.addl_rec_count)
-		print "CLASS: addl_rec_count: ", self.addl_rec_count
+		logMessage(msg="addl_rec_count: "
+			 + str(self.addl_rec_count), verb=2)
 
 
 		## Question section ends with NULL (\x00) and has binary length
@@ -92,10 +140,18 @@ class DNSquery:
 		offsetNamePart += 2
 		lenNamePart += 2
 		self.QClass = self.questionName[offsetNamePart:lenNamePart]
-		print "QType (A vs MX): ", self.qtypeCodes[ unpack('!H', self.QType)[0]], " QClass (IN=1): ", unpack('!H', self.QClass)[0]
+		logMessage(msg="QType (A vs MX): " 
+			 + self.qtypeCodes[ unpack('!H', self.QType)[0]]
+			 + " (code %d)" % unpack('!H', self.QType)[0]
+			 , verb=2)
+
+		logMessage( "QClass (IN=1): ", unpack('!H', self.QClass)[0],
+			 verb=4)
 
 		self.questionName = self.questionName[:lenNamePart]
-		print "questionName TRIMMED (len: %d): \"%s\"" % (len(self.questionName), repr(self.questionName) )
+		logMessage(msg=format("questionName TRIMMED (len: %d): \"%s\"" %
+			 (len(self.questionName), repr(self.questionName) ) ),
+			 verb=3)
 
 
 	def questionName(self):
@@ -186,8 +242,18 @@ class DNSResponse(DNSquery):
 #		print "getResourceRecord! ==========================="
 #		print "Qnames:", QNames
 		print "QType:", repr(QType), " QClass:", repr(QClass)
-#		print "QAnswer:", repr(QAnswer)
+		print "QAnswer:", repr(QAnswer)
+		## Query type ANY is handled specially (here):
+		## Instead return a TXT record
+		if unpack('!H', QType)[0] == 255:
+			QType = pack('!H', 16) ## i.e. 16 aka TXT
+			QAnswer += '     Type ANY not supported   ' \
+				+"'See draft-ietf-dnsop-refuse-any'"
+
 		returnString = ''
+#		if unpack('!H', QType)[0] == 16:
+#			returnString += pack("!BB", len("ronald"), 0) + 'ronald'
+#		else:
 		for oneName in QNames:
 			lenName = len(oneName)
 #			print "One NAME: %s  and length: %d" % (oneName, lenName)
@@ -205,7 +271,7 @@ class DNSResponse(DNSquery):
 			## ALSO, preceding all that is 2-byte Preference value which must
 			## be included in field length indicator
 			returnString += str(pack("!H", len('.'.join(QNames)) + 2 + 2 ) )
-			print "QType == MX, adding additional field to RR:", repr(QType)
+			print "QType == MX, adding fields to RR:", repr(QType)
 			returnString += pack('!H', 1)  ## Arbitrary Preference value = 1
 			for oneName in QNames:
 				lenName = len(oneName)
@@ -213,14 +279,30 @@ class DNSResponse(DNSquery):
 				returnString += pack("!B", lenName)
 				returnString += oneName
 			returnString += pack("!B", 0)
+
+		## TXT records (should) get a name=value format per RFC 1464 (not RFC 1035 though):
+		elif unpack('!H', QType)[0] == 16  or  unpack('!H', QType)[0] == 255:
+			QAnswer += "     (c) 2017 Ron@RonaldBarnes.ca"
+			print "QType == TXT, adding fields to RR: len: %d    value: %s" % (len(QAnswer), QAnswer )
+			returnString += str(pack("!H", len(QAnswer) +1) )
+			returnString += str(pack("!B", len(QAnswer) ) )
+			returnString += QAnswer
+			# returnString += pack("!B", 0)
 		else:
+		## "A" type record, 2-byte length prefix:
 			returnString += pack("!H", 4)
 			for octet in QAnswer.split('.'):
 	#			print "OCTET:", octet
 				returnString += pack("!B", int(octet) )
+
 		print "RESOURCE RECORD RETURN len: %d  and VALUE: %s" % (len(returnString), repr(returnString))
 		return returnString
 
+
+	def setTTL(self, newTTL):
+		print "CLASS: setTTL before:", self.QTTL,
+		self.QTTL = newTTL
+		print "CLASS: setTTL after:", self.QTTL
 
 
 
@@ -241,15 +323,6 @@ print("Bound to address %s :: %s " % (IP_ADDR, IP_PORT) );
 # s.listen(1)
 # print "Listening on port ", IP_PORT
 
-
-#try:
-#	conn, addr = s.accept()
-#	print 'Connection accepted from address:', addr
-#except socket.timeout:
-#	print "Timeout on socket..."
-#	# conn.shutdown(2)	## 0: rec, 1: tx, 2: both
-#	# conn.close()
-#	raise SystemExit
 
 while(True):
 	## data = conn.recv(BUFFER_SIZE)
@@ -284,8 +357,10 @@ while(True):
 	query_id = query_header[:2]
 	query_byte_3 = query_header[2:3]
 
-	print("received data: client_ip: %s, %i bytes\nheader: \"%s\"" % (client_ip, len(data), repr(query_header) ) )
-#	print("Received query data: \"%s\"" % repr(data) )
+	logMessage(msg=format("Connection: client_ip: %s, %i bytes" 
+					   % (client_ip, len(data) ) ) , verb=1)
+	logMessage(msg="header: " + repr(query_header), verb=3)
+	logMessage(msg="Received query data: " + repr(data), verb=4 )
 
 
 	x = DNSquery(data)
@@ -301,15 +376,20 @@ while(True):
 
 	zzz = x.getHeader()
 	# print "RETURN HEADER: \"", zzz, "\""
-	print "Question is for:", x.getQuestionNameCanonical()
+	logMessage( msg="Question is for: " + x.getQuestionNameCanonical(),
+		verb=1)
 
+	#if (x.getQuestionNameCanonical == 'my.ip'):
+		# y.setTTL(86400)
+	#else:
+		# y.setTTL(0)
 
 
 
 
 	retval = x.getHeader() \
 	+ x.questionSection() \
-	+ y.getResourceRecord(x.getQNames(), x.QType, x.QClass, 1234, client_ip)
+	+ y.getResourceRecord(x.getQNames(), x.QType, x.QClass, 0, client_ip)
 
 #	print "RETVAL1: len: %d  value: %s" % (len(retval), repr(retval))
 
@@ -318,39 +398,20 @@ while(True):
 	raise SystemExit  ## aka: sys.exit but without import sys
 
 
-	print '\n###\n' \
-	+ repr(pack('!B', 2) + 'my' + pack('!B', 2) + 'ip' \
-	+ pack('!B', 0) \
-	+ pack('!HHiH', 1,1,34,4) \
-	+ pack('!BBBB', 127,0,0,1) )
-
-
-	retval = x.getHeader() \
-	+ x.questionSection() \
-	+ pack('!B', 2) + 'my' + pack('!B', 2) + 'ip' + pack('!B', 3) + 'com' + pack('!B', 2) + 'uk' + pack('!B', 0) \
-	+ pack('!HHiH', 1,1,1234,4) \
-	+ pack('BBBB', 127,0,0,1)
-	print "RETVAL2: len: %d  value: %s" % (len(retval), repr(retval))
-
-
-
-	s.sendto(x.getHeader() \
-	+ x.questionSection() \
-	+ pack('!B', 2) + 'my' + pack('!B', 2) + 'ip' + pack('!B', 0) \
-	+ pack('!HHiH', 1,1,1234,4) \
-	+ pack('BBBB', 127,0,0,1), client_ip_port)
-
-
-	s.sendto(retval, client_ip_port)
-
-	s.sendto(x.getHeader() \
-	+ x.questionSection() \
-	+ y.getResourceRecord(x.getQNames(), x.QType, x.QClass, 34, client_ip) \
-	, client_ip_port)
 
 
 
 
 
 
+## RESOURCE RECORD RETURN len: 40  and VALUE: '\x0cdetectportal\x07firefox\x03com\x00\x00\x01\x00\x01\x00\x00\x04\xd2\x00\x04\x9d4\x0f\xcd'
 
+## \x06austin\x04logs\x04roku\x03com\x00\x00\x01\x00\x01\x00\x00\x04\xd2\x00\x04\x9d4\x0f\xcd
+
+## Traceback (most recent call last):
+#  File "myoutsideip.py", line 314, in <module>
+#    x = DNSquery(data)
+#  File "myoutsideip.py", line 95, in __init__
+ #   print "QType (A vs MX): %s " % self.qtypeCodes[ unpack('!H', self.QType)[0]],
+## KeyError: 28
+## KeyError: 33  <-- SRV type record requested
