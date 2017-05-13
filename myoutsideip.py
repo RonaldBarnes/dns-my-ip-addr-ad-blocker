@@ -199,10 +199,26 @@ class DNSquery:
 			self.auth_rec_count = 0
 		print "CLASS: NEW auth_rec_count: ", self.auth_rec_count
 
+	def SRVFAIL(self):
+		print "CLASS: SRVFAIL before:", self.query_byte_4, \
+			" binary: ", format(self.query_byte_4, '08b')
+		self.query_byte_4 = self.query_byte_4 ^ 2
+		print "CLASS: SRVFAIL after:", self.query_byte_4, \
+			" binary: ", format(self.query_byte_4, '08b')
+
 	def NXDOMAIN(self):
-		print "CLASS: NXDOMAIN before:", self.query_byte_4,
+		print "CLASS: NXDOMAIN before:", self.query_byte_4, \
+			" binary: ", format(self.query_byte_4, '08b')
 		self.query_byte_4 = self.query_byte_4 ^ 3
-		print "CLASS: NXDOMAIN after:", self.query_byte_4
+		print "CLASS: NXDOMAIN after:", self.query_byte_4, \
+			" binary: ", format(self.query_byte_4, '08b')
+
+	def NOAUTH(self):
+		print "CLASS: NOT FOUND (NOT AUTH) before:", self.query_byte_4, \
+			" binary: ", format(self.query_byte_4, '08b')
+		self.query_byte_4 = self.query_byte_4 ^ 9
+		print "CLASS: NOT FOUND (NOT AUTH) after: ", self.query_byte_4, \
+			" binary: ", format(self.query_byte_4, '08b')
 
 
 	def printHeader(self):
@@ -365,6 +381,7 @@ while(True):
 
 	x = DNSquery(data)
 #	x.NXDOMAIN()
+	x.NOAUTH()
 	x.setResponseFlag()
 	x.recursionOff()
 	x.addAnswer()
