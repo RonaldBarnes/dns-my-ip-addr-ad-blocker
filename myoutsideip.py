@@ -10,12 +10,26 @@ from sys import argv
 ## http://www.tcpipguide.com/free/t_DNSMessageHeaderandQuestionSectionFormat.htm
 
 
+IP_ADDR = '0.0.0.0'
+IP_ADDR = '127.0.0.1'
+IP_PORT = 53
+BUFFER_SIZE = 512
+
+## A logging util that accepts 2 forms of parameters:
+## logMessage('A message', 4)
+## or
+## logMessage(msg='A message', verb=4)
+## 
+## The second format is handy when expanding functionality at
+## later date.
+##
+## Note that both methods do not work in same invocation
+##
 ## Logging default level:
 verbosityGlobal = 2
 
 ##def logMessage(message, *positional_parameters, **keyword_parameters):
-##def logMessage(message, *positional_parameters, **keyword_parameters):
-def logMessage(msgwtf = None, verbwtf = None, **keywords):
+def logMessage(msgBare = None, verbBare = None, **keywords):
 	verbosityLocal = None
 
 	#print "key: ", keywords
@@ -23,24 +37,24 @@ def logMessage(msgwtf = None, verbwtf = None, **keywords):
 	if ('msg' in keywords):
 		msg = keywords['msg']
 		# print 'MESSAGE: ', msg
-	elif (msgwtf == None):
+	elif (msgBare == None):
 		print 'NO MESSAGE...'
 		return
 	else:
-		msg = msgwtf
+		msg = msgBare
 
 	if ('verb' in keywords):
 		verbosityLocal = keywords['verb']
 		# print 'VERB: ', verbosityLocal
-	elif (verbwtf == None):
+	elif (verbBare == None):
 		verbosityLocal = verbosityGlobal
 	else:
-		verbosityLocal = verbwtf
+		verbosityLocal = verbBare
 
 
 	if verbosityLocal <= verbosityGlobal:
 		print "(*) %s" % msg
-##		print "verbosity: %s  and msg: \"%s\"" % (verbosityLocal, msg)
+
 
 
 
@@ -48,6 +62,9 @@ def logMessage(msgwtf = None, verbwtf = None, **keywords):
 
 
 class DNSquery:
+
+	## Type "A" is only one relevant to "dig my.ip", others may be
+	## implemented if need arises.  This is a subset of possiblities.
 	qtypeCodes = {1: "A", 2: "NS",
 		5: "CNAME", 6: "SOA",
 		10: 'NULL',11: 'WKS', 
@@ -56,87 +73,109 @@ class DNSquery:
 		33: 'SRV', 'AFXR': 252,
 		255: 'ANY'}
 
+	## Types of queries (a subset): only 0: Standard Query is implemented:
 	opCodes = {0: "Std Query", 2: "Status", 4: "Notify", 5: "Update"}
 
+	## An array of Resource Records that may be returned to client:
+	ResourceRec = []
 
 	def __init__(self, query):
 
+		## Header gets rebuilt with some bits fiddled:
+		## Retrieve it with getHeader()
 		self.query_header = query[:12]
 		self.query_id, = unpack('!H', self.query_header[:2] )
-		logMessage( msg="QID: " + str(self.query_id), verb=1)
+		logMessage( msg="QueryID: " + str(self.query_id), verb=1)
 
+		## Byte 3 of header contains question / response bit
 		self.query_byte_3 = self.query_header[2:3]
 		self.query_byte_3, = unpack('!B', self.query_byte_3)
 		## set response flag ON
 		# self.response = self.query_byte_3 ^ 128
 		logMessage( msg="byte 3 w/ query/response flag:" +
 			 format(self.query_byte_3, '08b'), verb=3)
-		# , \
-		#	" derived from: ", format(self.query_byte_3, '08b')
-		# self.query_byte_3 = self.response
 
+		## Byte 4 of header contains RCode (recursion flag) and
+		## error codes, if applicable
 		self.query_byte_4 = self.query_header[3:4]
 		self.query_byte_4, = unpack('!B', self.query_byte_4)
 		logMessage(msg="byte 4 w/ recursion flag:"
 			 + format(self.query_byte_4, '08b'), verb=3)
 
+		## Only intending to handle one question regardless of count
 		self.question_count = self.query_header[4:6]
 		self.question_count, = unpack('!H', self.question_count)
 		logMessage(msg="question_count: " 
 			 + str(self.question_count), verb=3)
 
+		## Answer count will be 1 in most / all cases
 		self.answer_count = self.query_header[6:8]
 		self.answer_count, = unpack('!H', self.answer_count)
 		logMessage(msg="answer_count: " 
 			 + str(self.answer_count), verb=4)
 
+		## Unlikely to add auth records, ought to always be zero
 		self.auth_rec_count = self.query_header[8:10]
 		self.auth_rec_count, = unpack('!H', self.auth_rec_count)
 		logMessage(msg="auth_rec_count: "
 			 + str(self.auth_rec_count), verb=4)
 
+		## May have additional records for TXT or ANY type queries,
+		## or for adding fancy (c) notices
 		self.addl_rec_count = self.query_header[10:12]
 		self.addl_rec_count, = unpack('!H', self.addl_rec_count)
 		logMessage(msg="addl_rec_count: "
 			 + str(self.addl_rec_count), verb=2)
+		##
+		## NOTE: dig has this set to 1 addl record, and most 
+		## servers send it back unchanged, without an addl record
+		if (self.addl_rec_count == 1):
+			self.subAdditional()
 
 
-		## Question section ends with NULL (\x00) and has binary length
-		## bytes, so 0x03 would indicate next part is "www", for example:
+		## Question section indicates the domain inquired about.
+		## It ends with NULL (\x00) and has binary length bytes,
+		## so 0x03 would indicate next part is "www", for example:
 		##
 		self.questionName = data[12:]
-		## print "questionName: \"%s\"" % repr(self.questionName)
+		## logMessage(msg="questionName: \"%s\"" \
+		##		% repr(self.questionName), verb=4)
 
-		## Parse out "question name" i.e. domain for which info requested:
+		## Parse out "question name" minus length bytes & NULL
+		## i.e. domain for which info requested:
 		self.QNames = []
 		kounterNameParts = 0
 		offsetNamePart = 0
 		lenNamePart = 1
-		while(self.questionName[offsetNamePart:lenNamePart] != pack('B', 0) ):
-			## Get byte that indicates (in binary) length of next name part:
-			lenNamePart, = unpack('B', self.questionName[offsetNamePart:lenNamePart])
-			## Move pointers along the "question" to extract name part (i.e. www or google):
+		## Cycle through QuestionName until trailing NULL found:
+		while(self.questionName[offsetNamePart:lenNamePart] \
+			!= pack('B', 0) ):
+
+			## Get byte that indicates (in binary) the
+			## length of next name part:
+			lenNamePart, = unpack('B', \
+				self.questionName[offsetNamePart:lenNamePart])
+			## Move pointers along the "question" to
+			## extract name part (i.e. www or google):
 			offsetNamePart += 1
 			lenNamePart += offsetNamePart
 			kounterNameParts += 1
 			## extract a name part:
-			self.QNames.append( self.questionName[offsetNamePart:lenNamePart] )
+			self.QNames.append( \
+				self.questionName[offsetNamePart:lenNamePart] )
 #			print "NAME PART #", kounterNameParts, 
 #			print " from: ", offsetNamePart, " to: ", lenNamePart, 
 #			print " is: ", self.QNames
 			offsetNamePart = lenNamePart
 			lenNamePart += 1
-#			print "NEXT BYTE: ", repr(self.questionName[offsetNamePart:lenNamePart])
-#			if self.questionName[offsetNamePart:lenNamePart] == pack('B', 0):
-				## print "Question for ", ".".join(self.QNames)
-#				break
+
 
 		## QType is "A", "MX", "CNAME", ... 2 bytes used:
 		offsetNamePart += 1
 		lenNamePart += 2
 		self.QType = self.questionName[offsetNamePart:lenNamePart]
+
 		## QClass is "IN" in 99.999% of cases:
-		
 		offsetNamePart += 2
 		lenNamePart += 2
 		self.QClass = self.questionName[offsetNamePart:lenNamePart]
@@ -154,9 +193,9 @@ class DNSquery:
 			 verb=3)
 
 
-	def questionName(self):
-		## Return question to client:
-		return self.questionName
+#	def questionName(self):
+#		## Return question to client:
+#		return self.questionName
 
 	def getQuestionNameCanonical(self):
 		## Return READABLE question name for logging
@@ -168,36 +207,59 @@ class DNSquery:
 
 
 	def setResponseFlag(self):
+		self.query_byte_3 = self.query_header[2:3]
+		self.query_byte_3, = unpack('!B', self.query_header[2:3])
+		## set response flag ON
+		# self.response = self.query_byte_3 ^ 128
 		print "Response flag set: from: ", format(self.query_byte_3, '08b'),
 		self.query_byte_3 = self.query_byte_3 ^ 128
+#		self.query_header = self.query_header[:2] \
+#			+ pack('!B', self.query_byte_3) \
+#			+ self.query_header[4:]
+		## ERROR on substring assignment:
+		## self.query_header[2:3] = pack('!16', unpack('!B', self.query_header[2:3])[0] ^ 128)
 		print " to: ", format(self.query_byte_3, '08b')
+		logMessage( msg="byte 3 w/ query/response flag:" +
+			 format(self.query_byte_3, '08b'), verb=3)
 
-	def recursionOff(self):
-		self.query_byte_4 = self.query_byte_4 ^ 128
+	def setRecursionOff(self):
+		## Byte 4 of header contains RCode (error code), if applicable
+		#self.query_byte_4 = self.query_header[3:4]
+		#self.query_byte_4 = self.query_byte_4 ^ 128
+		## unpack subset of header to get 0th element of tuple, which
+		## can be OR'd (^) with 128 to set recursion bit off:
+		self.query_byte_4 = unpack('!B', self.query_header[3:4])[0] ^ 128
+#		self.query_header = self.query_header[:3] \
+#			+ pack('!B', self.query_byte_4) \
+#			+ self.query_header[5:]
+		logMessage(msg="byte 4 w/ recursion flag:"
+			 + format(self.query_byte_4, '08b'), verb=2)
 
 	def addAnswer(self):
-		self.answer_count = self.answer_count + 1
-		print "CLASS: NEW answer_count: ", self.answer_count
+		self.answer_count += 1
+		print "NEW answer_count: ", self.answer_count
+
+	def subAnswer(self):
+		self.answer_count = max(self.answer_count -1, 0)
+		print "NEW answer_count: ", self.answer_count
 
 	def addAdditional(self):
-		self.addl_rec_count = self.addl_rec_count + 1
-		print "CLASS: NEW additional_count: ", self.answer_count
+		self.addl_rec_count += 1
+		print "NEW additional_count: ", self.answer_count
 
 	def subAdditional(self):
-		self.addl_rec_count = self.addl_rec_count - 1
-		if self.addl_rec_count < 0:
-			self.addl_rec_count = 0
-		print "CLASS: NEW additional_count: ", self.addl_rec_count
+		self.addl_rec_count = max(self.addl_rec_count - 1, 0)
+		print "NEW additional_count: ", self.addl_rec_count
 
 	def addAuth(self):
-		self.auth_rec_count = self.auth_rec_count + 1
-		print "CLASS: NEW auth_rec_count: ", self.auth_rec_count
+		self.auth_rec_count += 1
+		print "NEW auth_rec_count: ", self.auth_rec_count
 
 	def subAuth(self):
-		self.auth_rec_count = self.auth_rec_count - 1
-		if self.auth_rec_count < 0:
-			self.auth_rec_count = 0
-		print "CLASS: NEW auth_rec_count: ", self.auth_rec_count
+		self.auth_rec_count = max(self.auth_rec_count - 1, 0)
+		print "NEW auth_rec_count: ", self.auth_rec_count
+
+
 
 	def SRVFAIL(self):
 		print "CLASS: SRVFAIL before:", self.query_byte_4, \
@@ -213,7 +275,7 @@ class DNSquery:
 		print "CLASS: NXDOMAIN after:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
 
-	def NOAUTH(self):
+	def NOTAUTH(self):
 		print "CLASS: NOT FOUND (NOT AUTH) before:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
 		self.query_byte_4 = self.query_byte_4 ^ 9
@@ -221,7 +283,7 @@ class DNSquery:
 			" binary: ", format(self.query_byte_4, '08b')
 
 
-	def printHeader(self):
+	'''	def printHeader(self):
 		print( "HEADER: \"%x%x%x%x%x%x%x\"" % (self.query_id \
 			, self.query_byte_3 \
 			, self.query_byte_4 \
@@ -229,8 +291,7 @@ class DNSquery:
 			, self.answer_count \
 			, self.auth_rec_count \
 			, self.addl_rec_count \
-			))
-		print "Length header: ", len(xyz)
+			))'''
 
 	def getHeader(self):
 		xyz = pack( "!HBBHHHH", self.query_id \
@@ -241,35 +302,48 @@ class DNSquery:
 			, self.auth_rec_count \
 			, self.addl_rec_count \
 			)
+		# print "Length header: ", len(xyz)
+
 		return xyz
 
-	##  HUH? AUTO-COMPLETE GAVE THIS:
-	## def t_DNSMessageHeaderandQuestionSectionFormat
-	def questionSection(self):
-		return self.questionName
+#	def questionSection(self):
+#		return self.questionName
+
+
+
+
+
 
 
 class DNSResponse(DNSquery):
-	def __init__(self,QNames):
-#		print "DNSResponse CLASS!"
+	def __init__(self, QNames):
+		print "DNSResponse CLASS  ",
 		print "Qnames:", QNames
 
 	def getResourceRecord(self, QNames, QType, QClass, QTTL, QAnswer):
 #		print "getResourceRecord! ==========================="
 #		print "Qnames:", QNames
-		print "QType:", repr(QType), " QClass:", repr(QClass)
-		print "QAnswer:", repr(QAnswer)
-		## Query type ANY is handled specially (here):
-		## Instead return a TXT record
+ 		logMessage(msg=format("QType: %r QClass: %r" \
+			% (QType, QClass)), verb=3)
+		logMessage(msg=format( "QAnswer: %r" % QAnswer), verb=3)
+
+		## ANY Query type is handled specially:
+		## Instead return an "Additional" "TXT" record FIRST
 		if unpack('!H', QType)[0] == 255:
-			QType = pack('!H', 16) ## i.e. 16 aka TXT
-			QAnswer += '     Type ANY not supported   ' \
-				+"'See draft-ietf-dnsop-refuse-any'"
+			## QAnswer += '     Type ANY not supported   ' \
+			##	+"'See draft-ietf-dnsop-refuse-any'"
+			x.ResourceRec.append( \
+				self.getResourceRecord( \
+					QNames, pack('!H', 16), \
+						QClass, \
+					QTTL, \
+					'Type ANY not supported   See draft-ietf-dnsop-refuse-any'
+					)
+				)
+			QType = pack('!H', 1) ## i.e. 16 aka TXT
 
 		returnString = ''
-#		if unpack('!H', QType)[0] == 16:
-#			returnString += pack("!BB", len("ronald"), 0) + 'ronald'
-#		else:
+
 		for oneName in QNames:
 			lenName = len(oneName)
 #			print "One NAME: %s  and length: %d" % (oneName, lenName)
@@ -281,11 +355,11 @@ class DNSResponse(DNSquery):
 
 		## MX records get a 2-byte Preference value first:
 		if unpack('!H', QType)[0] == 15:
-			## Answer is NOT 4 octets of IP address but domain name in STD DNS 
-			## NAME format, with length bytes preceding each portion, and
-			## trailing NULL byte.
-			## ALSO, preceding all that is 2-byte Preference value which must
-			## be included in field length indicator
+			## Answer is NOT 4 octets of IP address but domain name in
+			## STD DNS NAME format, with length bytes preceding each
+			## portion, and trailing NULL byte.
+			## ALSO, preceding all that is 2-byte Preference value 
+			## which must be included in field length indicator
 			returnString += str(pack("!H", len('.'.join(QNames)) + 2 + 2 ) )
 			print "QType == MX, adding fields to RR:", repr(QType)
 			returnString += pack('!H', 1)  ## Arbitrary Preference value = 1
@@ -296,14 +370,23 @@ class DNSResponse(DNSquery):
 				returnString += oneName
 			returnString += pack("!B", 0)
 
-		## TXT records (should) get a name=value format per RFC 1464 (not RFC 1035 though):
-		elif unpack('!H', QType)[0] == 16  or  unpack('!H', QType)[0] == 255:
-			QAnswer += "     (c) 2017 Ron@RonaldBarnes.ca"
-			print "QType == TXT, adding fields to RR: len: %d    value: %s" % (len(QAnswer), QAnswer )
-			returnString += str(pack("!H", len(QAnswer) +1) )
-			returnString += str(pack("!B", len(QAnswer) ) )
-			returnString += QAnswer
-			# returnString += pack("!B", 0)
+		## TXT records:
+		elif unpack('!H', QType)[0] == 16: #  or  unpack('!H', QType)[0] == 255:
+			logMessage(msg=format("QType == TXT," \
+				+ " adding fields to RR: len: %d value: %s" \
+					% (len(QAnswer), QAnswer ) ), verb=4)
+
+			## Multiple strings allowed in answers:
+			if (type(QAnswer) == list):
+				returnString += str(pack("!H", len(' '.join(QAnswer) ) +1) )
+				for oneAnswer in QAnswer:
+					returnString += str(pack("!B", len(oneAnswer)))
+					returnString += oneAnswer
+			else:	## assume type(QAnswer) = string
+					## (TODO test whether valid)
+				returnString += str(pack("!H", len(QAnswer) +1) )
+				returnString += str(pack("!B", len(QAnswer) ) )
+				returnString += QAnswer
 		else:
 		## "A" type record, 2-byte length prefix:
 			returnString += pack("!H", 4)
@@ -311,7 +394,10 @@ class DNSResponse(DNSquery):
 	#			print "OCTET:", octet
 				returnString += pack("!B", int(octet) )
 
-		print "RESOURCE RECORD RETURN len: %d  and VALUE: %s" % (len(returnString), repr(returnString))
+		logMessage(msg=format(
+			"RESOURCE RECORD RETURN len: %d  and VALUE: %s" \
+			% (len(returnString), repr(returnString))
+			), verb=40)
 		return returnString
 
 
@@ -325,19 +411,15 @@ class DNSResponse(DNSquery):
 
 ## #######################################################
 
-IP_ADDR = '127.0.0.1'
-IP_PORT = 53
-BUFFER_SIZE = 512
-
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 # s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 # s.settimeout(5)
 s.bind(( IP_ADDR, IP_PORT))
-print("Bound to address %s :: %s " % (IP_ADDR, IP_PORT) );
-# s.listen(1)
-# print "Listening on port ", IP_PORT
+logMessage(format("Bound to IP :: port --> %s :: %s " \
+	% (IP_ADDR, IP_PORT) ), \
+		verb=0);
 
 
 while(True):
@@ -379,20 +461,27 @@ while(True):
 	logMessage(msg="Received query data: " + repr(data), verb=4 )
 
 
+	## ##############################################################
+	## Build a query object, set response flag, etc:
 	x = DNSquery(data)
-#	x.NXDOMAIN()
-	x.NOAUTH()
 	x.setResponseFlag()
-	x.recursionOff()
-	x.addAnswer()
-	x.subAdditional()
-	x.subAuth()
+	x.setRecursionOff()
+
+	## Also, do not set NOTAUTH if it's a black-hole target:
+	if (x.getQuestionNameCanonical()[:5] != 'my.ip'):
+		y.setTTL(86400)
+		x.NOTAUTH()
+
+#	x.NXDOMAIN()
+	## dig indicates one question AND one additional, so
+	## it seems correct to strip the non-existant 1 addl_rec_count:
+	## SO, it's now done at header parsing time if it comes in as 1
+	## x.subAdditional()
+
 
 	y = DNSResponse(x.getQNames() )
-	# y.getResourceRecord(x.getQNames(), x.QType, x.QClass, 0, client_ip)
 
-	zzz = x.getHeader()
-	# print "RETURN HEADER: \"", zzz, "\""
+
 	logMessage( msg="Question is for: " + x.getQuestionNameCanonical(),
 		verb=1)
 
@@ -403,10 +492,24 @@ while(True):
 
 
 
+	x.ResourceRec.append(y.getResourceRecord(x.getQNames(), \
+		x.QType, x.QClass, 0, client_ip))
+	x.addAnswer()
+
+	x.ResourceRec.append(y.getResourceRecord(x.getQNames(), \
+		pack('!H', 16), x.QClass, 86400, 'QANSWER'))
+	x.addAdditional()
+
+	x.ResourceRec.append(y.getResourceRecord(x.getQNames(), \
+		pack('!H', 16), x.QClass, 86400, ['(c)', 'Ronald Barnes', '2017'] ))
+	x.addAdditional()
+
+	# print "x.ResourceRec: %r", x.ResourceRec
 
 	retval = x.getHeader() \
-	+ x.questionSection() \
-	+ y.getResourceRecord(x.getQNames(), x.QType, x.QClass, 0, client_ip)
+	+ x.questionName \
+	+ ''.join(x.ResourceRec)  \
+#	+ y.getResourceRecord(x.getQNames(), x.QType, x.QClass, 0, client_ip)
 
 #	print "RETVAL1: len: %d  value: %s" % (len(retval), repr(retval))
 
