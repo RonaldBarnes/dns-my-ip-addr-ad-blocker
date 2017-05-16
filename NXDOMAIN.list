@@ -1,7 +1,7 @@
 ## If any domain in this list matches end of incoming query,
 ## the query returns NXDOMAIN.
-## i.e. ads.doubleclick.net will get NXDOMAIN because doubleclick.net 
-## is in this file.
+## i.e. ads.doubleclick.net will get NXDOMAIN because
+##  doubleclick.net is in this file.
 ##
 doubleclick.net
 google-ad-services.com

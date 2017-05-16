@@ -1,6 +1,6 @@
 [Unit]
 Description=Black Hole DNS
-Documentation=dig my.ip @xmpp.kwvoip.ca
+# Documentation=dig my.ip @xmpp.kwvoip.ca
 # Documentation=man:ejabberdctl
 
 After=network.target
@@ -8,15 +8,11 @@ After=network.target
 
 
 [Service]
-Type=oneshot
+# Type=oneshot
+Type=simple
 
-# PIDFile=/opt/ejabberd/ejabberd.pid
-## PIDFile=/run/ejabberd/ejabberd.pid
-## GuessMainPID=yes
 
-# User=ejabberd
-
-#ExecStart=/usr/bin/python /tmp/myoutsideip.py  --config-dir=/tmp --debug=3
+# ExecStart=/usr/bin/python /tmp/myoutsideip.py  --config-dir=/tmp --debug=3
 
 ExecStart=/usr/bin/python /home/ron/Projects/myoutsideip/myoutsideip.py --config-dir=/home/ron/Projects/myoutsideip
 

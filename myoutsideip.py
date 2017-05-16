@@ -4,7 +4,7 @@
 import socket
 # from socket import *
 from struct import *
-from sys import argv
+from sys import argv, exc_info
 import re
 from os import stat
 
@@ -58,16 +58,31 @@ NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
 
 ## Get the timestamp of that file, may check it for changes and
 ## auto-reload it:
-NXDOMAINfileTimestamp = stat(NXDOMAINfile).st_mtime
+try:
+	NXDOMAINfileTimestamp = stat(NXDOMAINfile).st_mtime
+	NXDOMAINs = open(NXDOMAINfile, 'r').read().splitlines()
+except:
+	print "ERROR:", exc_info()[1]
+	raise SystemExit
 
-NXDOMAINs = open(NXDOMAINfile, 'r').read().splitlines()
+
+
 ## Remove comments:
+## print "LEN NXDOMAINs:", len(NXDOMAINs)
+
 index = 0
+
 while index < len(NXDOMAINs):
-	if NXDOMAINs[index][0:1] == '#':
+	NXDOMAINs[index] = re.sub('[\t ]*#+.*$','', NXDOMAINs[index] )
+	if index < 10:
+		print "%03d \"%s\"" % (index+1, NXDOMAINs[index] )
+	if NXDOMAINs[index][0:1] == 'X'  or  len(NXDOMAINs[index]) == 0:
+		# print "%03d \"%s\"  DELETING..." % (index+1, NXDOMAINs[index] )
 		del NXDOMAINs[index]
-	index += 1
-# raise SystemExit
+	else:
+		index += 1
+## print "LEN NXDOMAINs without comments:", len(NXDOMAINs)
+## raise SystemExit
 
 
 
@@ -326,7 +341,7 @@ class DNSquery:
 
 
 
-	def SRVFAIL(self):
+	def SERVFAIL(self):
 		print "CLASS: SRVFAIL before:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
 		self.query_byte_4 = self.query_byte_4 | 2
@@ -577,7 +592,7 @@ while(True):
 	logMessage( msg="Question is for: " + query_domain,
 		verb=1)
 
-
+	## Check for a black-holed domain name:
 	for domain in NXDOMAINs:
 		## print "DOMAIN being tested:", domain
 		if query_domain.endswith(domain ):
@@ -586,20 +601,20 @@ while(True):
 			x.subAnswer()
 			nxdomainFound = True
 			continue
-#	if (x.getQuestionNameCanonical() in NXDOMAINs):
-#		x.NXDOMAIN()
-#		x.subAnswer()
-		## TTL = huge
+
+
 	if not nxdomainFound:
-		x.ResourceRec.append(getResourceRecord(x.getQNames(), \
-			x.QType, x.QClass, 0, client_ip))
-		x.addAnswer()
+		if query_domain[0:4] == 'my.ip':
+			x.ResourceRec.append(getResourceRecord(x.getQNames(), \
+				x.QType, x.QClass, 0, client_ip))
+			x.addAnswer()
 
-		x.ResourceRec.append(getResourceRecord(x.getQNames(), \
-			pack('!H', 16), x.QClass, 86400, ['(c)', \
-				'Ronald Barnes', '2017'] ))
-		x.addAdditional()
-
+			x.ResourceRec.append(getResourceRecord(x.getQNames(), \
+				pack('!H', 16), x.QClass, 86400, ['(c)', \
+					'Ronald Barnes', '2017'] ))
+			x.addAdditional()
+		else:
+			x.SERVFAIL()
 
 
 
