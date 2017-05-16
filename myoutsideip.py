@@ -6,7 +6,7 @@ import socket
 from struct import *
 from sys import argv
 import re
-
+from os import stat
 
 
 ## print "ARGV: %r,  len ARGV: %d" % (argv, len(argv))
@@ -21,42 +21,51 @@ IP_PORT = 53
 BUFFER_SIZE = 512
 
 CONFDIR = '/etc/DNSblackhole'
-# NXDOMAIN = ['cbc.ca', 'google.ca']
-# NXDOMAINfile = CONFDIR + '/NXDOMAIN.list'
-
 verbosityGlobal = 2
 
 
 def parseArgs(keywords):
-	print "keywords: %r,  len keywords: %d" % (keywords, len(keywords))
+	#print "keywords: %r,  len keywords: %d" % (keywords, len(keywords))
 	for oneWord in keywords:
 		match = None
 		match = re.match('(--debug)[=:](.+)', oneWord)
 		if match and len(match.groups() ) == 2:
-			print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
+			#print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
 			global verbosityGlobal
 			verbosityGlobal = match.group(2)
+			print "--debug: ", verbosityGlobal
 			continue
 		match = re.search('(--conf[ig]*-dir)[=:](.+)', oneWord)
 		if match and len(match.groups() ) == 2:
-			print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
+			#print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
 			global CONFDIR
 			CONFDIR = match.group(2)
+			print "--confdir:", CONFDIR
 			continue
-#		if match == None:
-#			print "Unrecognized argument: ", oneWord
-#			raise SystemExit
+		if match == None:
+			print "\nWARNING: Unrecognized argument: ", oneWord
+			raise SystemExit
 
 if (len(argv) > 1):
 	args = argv[1:]
 	## print "ARGS: %r,  len ARGS: %d" % (args, len(args))
 	parseArgs( argv[1:] )
 
-## NXDOMAINfile = CONFDIR + '/NXDOMAIN'
-NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
-print "Debug: ", verbosityGlobal, " confdir:", CONFDIR, "NXDOMAINfile: ", NXDOMAINfile
 
-raise SystemExit
+
+## Compose location of the list of NXDOMAINs from user-overridable options:
+NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
+
+## Get the timestamp of that file, may check it for changes and
+## auto-reload it:
+NXDOMAINfileTimestamp = stat(NXDOMAINfile).st_mtime
+
+NXDOMAINs = open(NXDOMAINfile, 'r').read()
+# raise SystemExit
+
+
+
+
 
 
 
@@ -555,7 +564,7 @@ while(True):
 	## NOW done at header parsing time if it comes in as 1
 	## x.subAdditional()
 
-	if (x.getQuestionNameCanonical() in NXDOMAIN):
+	if (x.getQuestionNameCanonical() in NXDOMAINs):
 		x.NXDOMAIN()
 		x.subAnswer()
 		## TTL = huge
