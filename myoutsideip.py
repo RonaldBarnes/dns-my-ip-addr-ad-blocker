@@ -572,6 +572,7 @@ while(True):
 
 
 	query_domain = x.getQuestionNameCanonical()
+	nxdomainFound = False
 
 	logMessage( msg="Question is for: " + query_domain,
 		verb=1)
@@ -583,11 +584,13 @@ while(True):
 			logMessage( msg='NXDOMAIN match: ' + domain, verb=2)
 			x.NXDOMAIN()
 			x.subAnswer()
+			nxdomainFound = True
+			continue
 #	if (x.getQuestionNameCanonical() in NXDOMAINs):
 #		x.NXDOMAIN()
 #		x.subAnswer()
 		## TTL = huge
-	else:
+	if not nxdomainFound:
 		x.ResourceRec.append(getResourceRecord(x.getQNames(), \
 			x.QType, x.QClass, 0, client_ip))
 		x.addAnswer()
