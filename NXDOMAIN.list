@@ -1,3 +1,8 @@
+## If any domain in this list matches end of incoming query,
+## the query returns NXDOMAIN.
+## i.e. ads.doubleclick.net will get NXDOMAIN because doubleclick.net 
+## is in this file.
+##
 doubleclick.net
 google-ad-services.com
 googleadservices.com
@@ -56,3 +61,55 @@ smart4ads.com
 seo4india.com
 popuptraffic.com
 pay-ads.com
+pillscash.com
+payserve.com
+partnerad.l.google.com
+pagerank4you.com
+pagead.l.google.com
+owebmoney.ru
+onlinecashmethod.com
+onlinecash.com
+nitroclicks.com
+netaffiliation.com
+moatads.com
+marketingsolutions.yahoo.com
+linkswaper.com
+leadboltads.net
+juicyads.com
+inspectorclick.com
+instantmadness.com
+imarketservices.com
+idtargeting.com
+i-clicks.net
+hyperbanner.net
+hs-analytics.net
+hollandbusinessadvertising.nl
+hits4me.com
+hits4pay.com
+hgads.com
+game-advertising-online.com
+fusionads.net
+findyourcasino.com
+fast-adv.it
+exchangead.com
+euros4click.de
+e-n-t-e-r-n-e-x.com
+dmtracker.com
+cyberbounty.com
+cybermonitor.com
+coremetrics.com
+confirmed-profits.com
+clickz.com
+clickzxc.com
+clickthrucash.com
+clickhereforcellphones.com
+clickadz.com
+class-act-clicks.com
+clicktrade.com
+channelintelligence.com
+casinopays.com
+cash4members.com
+campaign.bharatmatrimony.com
+boomads.com
+bizrate.com
+bans.adserver.co.il

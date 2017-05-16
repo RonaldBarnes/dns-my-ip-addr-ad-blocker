@@ -32,7 +32,7 @@ def parseArgs(keywords):
 		if match and len(match.groups() ) == 2:
 			#print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
 			global verbosityGlobal
-			verbosityGlobal = match.group(2)
+			verbosityGlobal = int(match.group(2) )
 			print "--debug: ", verbosityGlobal
 			continue
 		match = re.search('(--conf[ig]*-dir)[=:](.+)', oneWord)
@@ -60,7 +60,13 @@ NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
 ## auto-reload it:
 NXDOMAINfileTimestamp = stat(NXDOMAINfile).st_mtime
 
-NXDOMAINs = open(NXDOMAINfile, 'r').read()
+NXDOMAINs = open(NXDOMAINfile, 'r').read().splitlines()
+## Remove comments:
+index = 0
+while index < len(NXDOMAINs):
+	if NXDOMAINs[index][0:1] == '#':
+		del NXDOMAINs[index]
+	index += 1
 # raise SystemExit
 
 
@@ -86,6 +92,7 @@ NXDOMAINs = open(NXDOMAINfile, 'r').read()
 ##def logMessage(message, *positional_parameters, **keyword_parameters):
 def logMessage(msgBare = None, verbBare = None, **keywords):
 	verbosityLocal = None
+	global verbosityGlobal
 
 	#print "key: ", keywords
 
@@ -105,7 +112,6 @@ def logMessage(msgBare = None, verbBare = None, **keywords):
 		verbosityLocal = verbosityGlobal
 	else:
 		verbosityLocal = verbBare
-
 
 	if verbosityLocal <= verbosityGlobal:
 		print "(*) %s" % msg
@@ -323,42 +329,42 @@ class DNSquery:
 	def SRVFAIL(self):
 		print "CLASS: SRVFAIL before:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
-		self.query_byte_4 = self.query_byte_4 ^ 2
+		self.query_byte_4 = self.query_byte_4 | 2
 		print "CLASS: SRVFAIL after:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
 
 	def NXDOMAIN(self):
 		print "CLASS: NXDOMAIN before:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
-		self.query_byte_4 = self.query_byte_4 ^ 3
+		self.query_byte_4 = self.query_byte_4 | 3
 		print "CLASS: NXDOMAIN after:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
 
 	def REFUSED(self):
 		print "CLASS: REFUSED before:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
-		self.query_byte_4 = self.query_byte_4 ^ 5
+		self.query_byte_4 = self.query_byte_4 | 5
 		print "CLASS: REFUSED after:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
 
 	def NXRRSET(self):
 		print "CLASS: NXRRSET before:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
-		self.query_byte_4 = self.query_byte_4 ^ 8
+		self.query_byte_4 = self.query_byte_4 | 8
 		print "CLASS: NXRRSET after:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
 
 	def NOTAUTH(self):
 		print "CLASS: NOT FOUND (NOT AUTH) before:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
-		self.query_byte_4 = self.query_byte_4 ^ 9
+		self.query_byte_4 = self.query_byte_4 | 9
 		print "CLASS: NOT FOUND (NOT AUTH) after: ", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
 
 	def NOTZONE(self):
 		print "CLASS: NOTZONE before:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
-		self.query_byte_4 = self.query_byte_4 ^ 10
+		self.query_byte_4 = self.query_byte_4 | 10
 		print "CLASS: NOTZONE after:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
 
@@ -564,9 +570,22 @@ while(True):
 	## NOW done at header parsing time if it comes in as 1
 	## x.subAdditional()
 
-	if (x.getQuestionNameCanonical() in NXDOMAINs):
-		x.NXDOMAIN()
-		x.subAnswer()
+
+	query_domain = x.getQuestionNameCanonical()
+
+	logMessage( msg="Question is for: " + query_domain,
+		verb=1)
+
+
+	for domain in NXDOMAINs:
+		## print "DOMAIN being tested:", domain
+		if query_domain.endswith(domain ):
+			logMessage( msg='NXDOMAIN match: ' + domain, verb=2)
+			x.NXDOMAIN()
+			x.subAnswer()
+#	if (x.getQuestionNameCanonical() in NXDOMAINs):
+#		x.NXDOMAIN()
+#		x.subAnswer()
 		## TTL = huge
 	else:
 		x.ResourceRec.append(getResourceRecord(x.getQNames(), \
@@ -574,13 +593,11 @@ while(True):
 		x.addAnswer()
 
 		x.ResourceRec.append(getResourceRecord(x.getQNames(), \
-			pack('!H', 16), x.QClass, 86400, ['(c)', 'Ronald Barnes', '2017'] ))
+			pack('!H', 16), x.QClass, 86400, ['(c)', \
+				'Ronald Barnes', '2017'] ))
 		x.addAdditional()
 
 
-
-	logMessage( msg="Question is for: " + x.getQuestionNameCanonical(),
-		verb=1)
 
 
 
