@@ -56,32 +56,40 @@ if (len(argv) > 1):
 ## Compose location of the list of NXDOMAINs from user-overridable options:
 NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
 
-## Get the timestamp of that file, may check it for changes and
-## auto-reload it:
-try:
-	NXDOMAINfileTimestamp = stat(NXDOMAINfile).st_mtime
-	NXDOMAINs = open(NXDOMAINfile, 'r').read().splitlines()
-except:
-	print "ERROR:", exc_info()[1]
-	raise SystemExit
 
 
+def loadNXDOMAINfile():
+	global NXDOMAINs
+	global NXDOMAINfile
+	## Get the timestamp of that file, may check it for changes and
+	## auto-reload it:
+	try:
+		NXDOMAINfileTimestamp = stat(NXDOMAINfile).st_mtime
+		NXDOMAINs = open(NXDOMAINfile, 'r').read().splitlines()
+	except:
+		print "ERROR:", exc_info()[1]
+		raise SystemExit
 
-## Remove comments:
-## print "LEN NXDOMAINs:", len(NXDOMAINs)
 
-index = 0
+	## Remove comments:
+	## print "LEN NXDOMAINs:", len(NXDOMAINs)
 
-while index < len(NXDOMAINs):
-	NXDOMAINs[index] = re.sub('[\t ]*#+.*$','', NXDOMAINs[index] )
-	if index < 10:
-		print "%03d \"%s\"" % (index+1, NXDOMAINs[index] )
-	if NXDOMAINs[index][0:1] == 'X'  or  len(NXDOMAINs[index]) == 0:
-		# print "%03d \"%s\"  DELETING..." % (index+1, NXDOMAINs[index] )
-		del NXDOMAINs[index]
-	else:
-		index += 1
-## print "LEN NXDOMAINs without comments:", len(NXDOMAINs)
+	index = 0
+
+	while index < len(NXDOMAINs):
+		NXDOMAINs[index] = re.sub('[\t ]*#+.*$','', NXDOMAINs[index] )
+#		if index < 10:
+#			print "%03d \"%s\"" % (index+1, NXDOMAINs[index] )
+		if NXDOMAINs[index][0:1] == 'X'  or  len(NXDOMAINs[index]) == 0:
+			# print "%03d \"%s\"  DELETING..." % (index+1, NXDOMAINs[index] )
+			del NXDOMAINs[index]
+		else:
+			index += 1
+	## print "LEN NXDOMAINs without comments:", len(NXDOMAINs)
+
+
+loadNXDOMAINfile()
+
 ## raise SystemExit
 
 
@@ -408,19 +416,89 @@ class DNSquery:
 
 		return xyz
 
-#	def questionSection(self):
-#		return self.questionName
 
 
+	def createResourceRecord( self, QNames, QType, QClass, QTTL, QAnswer):
+	#		print "createResourceRecord! ==========================="
+	#		print "Qnames:", QNames
+		logMessage(msg=format("QType: %r QClass: %r" \
+			% (QType, QClass)), verb=3)
+		logMessage(msg=format( "QAnswer: %r" % QAnswer), verb=3)
 
+		## ANY Query type is handled specially:
+		## Instead return an "Additional" "TXT" record FIRST
+		if unpack('!H', QType)[0] == 255:
+			## QAnswer += '     Type ANY not supported   ' \
+			##	+"'See draft-ietf-dnsop-refuse-any'"
+			oneQuery.ResourceRec.append( \
+				createResourceRecord( \
+					QNames, pack('!H', 16), \
+						QClass, \
+					QTTL, \
+					'Type ANY not supported   See draft-ietf-dnsop-refuse-any'
+					)
+				)
+			QType = pack('!H', 1) ## i.e. 16 aka TXT
 
+		returnString = ''
 
+		for oneName in QNames:
+			lenName = len(oneName)
+			logMessage(msg=format("One NAME: %s  and length: %d" \
+				% (oneName, lenName)), verb=3)
+			returnString += pack("!B", lenName)
+			returnString += oneName
+		returnString += pack("!B", 0)
+		returnString += QType + QClass
+		returnString += pack("!i", QTTL)
 
+		## MX records get a 2-byte Preference value first:
+		if unpack('!H', QType)[0] == 15:
+			## Answer is NOT 4 octets of IP address but domain name in
+			## STD DNS NAME format, with length bytes preceding each
+			## portion, and trailing NULL byte.
+			## ALSO, preceding all that is 2-byte Preference value 
+			## which must be included in field length indicator
+			returnString += str(pack("!H", len('.'.join(QNames)) + 2 + 2 ) )
+			print "QType == MX, adding fields to RR:", repr(QType)
+			returnString += pack('!H', 1)  ## Arbitrary Preference value = 1
+			for oneName in QNames:
+				lenName = len(oneName)
+				print "One NAME: %s  and length: %d" % (oneName, lenName)
+				returnString += pack("!B", lenName)
+				returnString += oneName
+			returnString += pack("!B", 0)
 
-class DNSResponse():
-#	def __init__(self, QNames):
-#		print "DNSResponse CLASS  ",
-#		print "Qnames:", QNames
+		## TXT records:
+		elif unpack('!H', QType)[0] == 16: #  or  unpack('!H', QType)[0] == 255:
+			logMessage(msg=format("QType == TXT," \
+				+ " adding fields to RR: len: %d value: %s" \
+					% (len(QAnswer), QAnswer ) ), verb=4)
+
+			## Multiple strings allowed in answers:
+			if (type(QAnswer) == list):
+				returnString += str(pack("!H", len(' '.join(QAnswer) ) +1) )
+				for oneAnswer in QAnswer:
+					returnString += str(pack("!B", len(oneAnswer)))
+					returnString += oneAnswer
+			else:	## assume type(QAnswer) = string
+					## (TODO test whether valid)
+				returnString += str(pack("!H", len(QAnswer) +1) )
+				returnString += str(pack("!B", len(QAnswer) ) )
+				returnString += QAnswer
+		else:
+		## "A" type record, 2-byte length prefix:
+			returnString += pack("!H", 4)
+			for octet in QAnswer.split('.'):
+	#			print "OCTET:", octet
+				returnString += pack("!B", int(octet) )
+
+		logMessage(msg=format(
+			"RESOURCE RECORD RETURN len: %d  and VALUE: %s" \
+			% (len(returnString), repr(returnString))
+			), verb=4)
+		return returnString
+
 
 	def setTTL(self, newTTL):
 		print "CLASS: setTTL before:", self.QTTL,
@@ -431,86 +509,6 @@ class DNSResponse():
 
 
 
-def getResourceRecord( QNames, QType, QClass, QTTL, QAnswer):
-#		print "getResourceRecord! ==========================="
-#		print "Qnames:", QNames
-	logMessage(msg=format("QType: %r QClass: %r" \
-		% (QType, QClass)), verb=3)
-	logMessage(msg=format( "QAnswer: %r" % QAnswer), verb=3)
-
-	## ANY Query type is handled specially:
-	## Instead return an "Additional" "TXT" record FIRST
-	if unpack('!H', QType)[0] == 255:
-		## QAnswer += '     Type ANY not supported   ' \
-		##	+"'See draft-ietf-dnsop-refuse-any'"
-		x.ResourceRec.append( \
-			self.getResourceRecord( \
-				QNames, pack('!H', 16), \
-					QClass, \
-				QTTL, \
-				'Type ANY not supported   See draft-ietf-dnsop-refuse-any'
-				)
-			)
-		QType = pack('!H', 1) ## i.e. 16 aka TXT
-
-	returnString = ''
-
-	for oneName in QNames:
-		lenName = len(oneName)
-		logMessage(msg=format("One NAME: %s  and length: %d" \
-			% (oneName, lenName)), verb=3)
-		returnString += pack("!B", lenName)
-		returnString += oneName
-	returnString += pack("!B", 0)
-	returnString += QType + QClass
-	returnString += pack("!i", QTTL)
-
-	## MX records get a 2-byte Preference value first:
-	if unpack('!H', QType)[0] == 15:
-		## Answer is NOT 4 octets of IP address but domain name in
-		## STD DNS NAME format, with length bytes preceding each
-		## portion, and trailing NULL byte.
-		## ALSO, preceding all that is 2-byte Preference value 
-		## which must be included in field length indicator
-		returnString += str(pack("!H", len('.'.join(QNames)) + 2 + 2 ) )
-		print "QType == MX, adding fields to RR:", repr(QType)
-		returnString += pack('!H', 1)  ## Arbitrary Preference value = 1
-		for oneName in QNames:
-			lenName = len(oneName)
-			print "One NAME: %s  and length: %d" % (oneName, lenName)
-			returnString += pack("!B", lenName)
-			returnString += oneName
-		returnString += pack("!B", 0)
-
-	## TXT records:
-	elif unpack('!H', QType)[0] == 16: #  or  unpack('!H', QType)[0] == 255:
-		logMessage(msg=format("QType == TXT," \
-			+ " adding fields to RR: len: %d value: %s" \
-				% (len(QAnswer), QAnswer ) ), verb=4)
-
-		## Multiple strings allowed in answers:
-		if (type(QAnswer) == list):
-			returnString += str(pack("!H", len(' '.join(QAnswer) ) +1) )
-			for oneAnswer in QAnswer:
-				returnString += str(pack("!B", len(oneAnswer)))
-				returnString += oneAnswer
-		else:	## assume type(QAnswer) = string
-				## (TODO test whether valid)
-			returnString += str(pack("!H", len(QAnswer) +1) )
-			returnString += str(pack("!B", len(QAnswer) ) )
-			returnString += QAnswer
-	else:
-	## "A" type record, 2-byte length prefix:
-		returnString += pack("!H", 4)
-		for octet in QAnswer.split('.'):
-#			print "OCTET:", octet
-			returnString += pack("!B", int(octet) )
-
-	logMessage(msg=format(
-		"RESOURCE RECORD RETURN len: %d  and VALUE: %s" \
-		% (len(returnString), repr(returnString))
-		), verb=4)
-	return returnString
 
 
 
@@ -518,16 +516,24 @@ def getResourceRecord( QNames, QType, QClass, QTTL, QAnswer):
 
 ## #######################################################
 
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-# s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-# s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-# s.settimeout(5)
-s.bind(( IP_ADDR, IP_PORT))
-logMessage(format("Bound to IP :: port --> %s :: %s " \
-	% (IP_ADDR, IP_PORT) ), \
+try:
+	s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+	s.bind(( IP_ADDR, IP_PORT))
+	logMessage(format("Bound to IP :: port --> %s :: %s " \
+		% (IP_ADDR, IP_PORT) ), \
 		verb=0);
+except:
+	print "\nERROR binding to socket at %s :: %d:\n\t%s" \
+		% (IP_ADDR, IP_PORT, exc_info()[1] )
+	raise SystemExit
 
+
+
+
+
+
+
+## #######################################################
 
 while(True):
 	## data = conn.recv(BUFFER_SIZE)
@@ -566,27 +572,17 @@ while(True):
 
 
 	## Build a query object, set response flag, etc:
-	x = DNSquery(data)
-	x.setResponseFlag()
-	x.setRecursionOff()
+	oneQuery = DNSquery(data)
+	oneQuery.setResponseFlag()
+	oneQuery.setRecursionOff()
 
 
-	y = DNSResponse()
 
 
-	## Also, do not set NOTAUTH if it's a black-hole target:
-#	if (x.getQuestionNameCanonical()[:5] != 'my.ip'):
-		# y.setTTL(86400)
-#		x.NOTAUTH()
-
-#	x.NXDOMAIN()
-	## dig indicates one question AND one additional, so
-	## it seems correct to strip the non-existant 1 addl_rec_count:
-	## NOW done at header parsing time if it comes in as 1
-	## x.subAdditional()
 
 
-	query_domain = x.getQuestionNameCanonical()
+
+	query_domain = oneQuery.getQuestionNameCanonical()
 	nxdomainFound = False
 
 	logMessage( msg="Question is for: " + query_domain,
@@ -597,40 +593,50 @@ while(True):
 		## print "DOMAIN being tested:", domain
 		if query_domain.endswith(domain ):
 			logMessage( msg='NXDOMAIN match: ' + domain, verb=2)
-			x.NXDOMAIN()
-			x.subAnswer()
+			oneQuery.NXDOMAIN()
+			oneQuery.subAnswer()
 			nxdomainFound = True
 			continue
 
 
 	if not nxdomainFound:
-		if query_domain[0:4] == 'my.ip':
-			x.ResourceRec.append(getResourceRecord(x.getQNames(), \
-				x.QType, x.QClass, 0, client_ip))
-			x.addAnswer()
+		if query_domain[0:5] == 'my.ip':
+			## True when looking for WAN-side IP via:
+			## dig my.ip @[this-server]
+			## Replicates dig my.ip @outsideip.net
+			oneQuery.ResourceRec.append( \
+				oneQuery.createResourceRecord(oneQuery.getQNames(), \
+				oneQuery.QType, oneQuery.QClass, 0, client_ip))
+			oneQuery.addAnswer()
 
-			x.ResourceRec.append(getResourceRecord(x.getQNames(), \
-				pack('!H', 16), x.QClass, 86400, ['(c)', \
-					'Ronald Barnes', '2017'] ))
-			x.addAdditional()
+			## Add a boastful TXT RR, because why not?
+			oneQuery.ResourceRec.append( \
+				oneQuery.createResourceRecord(oneQuery.getQNames(), \
+				pack('!H', 16), \
+				oneQuery.QClass, 86400, \
+				['(c)', 'Ronald Barnes', '2017'] ))
+			oneQuery.addAdditional()
 		else:
-			x.SERVFAIL()
+			## Standard reply for non-recursive "Not Found"
+			## Test this via: dig cbc.ca @8.8.8.8 +norecurse
+			oneQuery.SERVFAIL()
 
 
 
 
 
 
-#	x.ResourceRec.append(y.getResourceRecord(x.getQNames(), \
-#		pack('!H', 16), x.QClass, 86400, 'QANSWER'))
-#	x.addAdditional()
+#	oneQuery.ResourceRec.append(y.createResourceRecord(oneQuery.getQNames(), \
+#		pack('!H', 16), oneQuery.QClass, 86400, 'QANSWER'))
+#	oneQuery.addAdditional()
 
-	# print "x.ResourceRec: %r", x.ResourceRec
+	# print "oneQuery.ResourceRec: %r", oneQuery.ResourceRec
 
-	retval = x.getHeader() \
-	+ x.questionName \
-	+ ''.join(x.ResourceRec)  \
-#	+ y.getResourceRecord(x.getQNames(), x.QType, x.QClass, 0, client_ip)
+	retval = oneQuery.getHeader() \
+	+ oneQuery.questionName \
+	+ ''.join(oneQuery.ResourceRec)  \
+
+
 
 #	print "RETVAL1: len: %d  value: %s" % (len(retval), repr(retval))
 

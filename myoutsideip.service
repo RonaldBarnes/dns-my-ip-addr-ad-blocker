@@ -14,9 +14,9 @@ Type=simple
 
 # ExecStart=/usr/bin/python /tmp/myoutsideip.py  --config-dir=/tmp --debug=3
 
-ExecStart=/usr/bin/python /home/ron/Projects/myoutsideip/myoutsideip.py --config-dir=/home/ron/Projects/myoutsideip
+ExecStart=/usr/bin/python /home/ron/Projects/myoutsideip/myoutsideip.py --config-dir=/home/ron/Projects/myoutsideip --debug=3
 
-
+Restart=always
 
 [Install]
 WantedBy=multi-user.target
