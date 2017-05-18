@@ -1,5 +1,19 @@
 #!/usr/bin/python
 
+"""
+BlackHoleDNS:
+
+Return domain not found (NXDOMAIN) for sites included in
+the appropriate file (trackers, ad servers, etc.).
+
+Also supports handy WAN-side IP address identification via
+	dig my.ip @[server]
+This replicates the myoutsideip.net service that's gone offline.
+
+Recursion is NOT supported, so have a secondary DNS setting
+in your router if this is primary DNS server.
+"""
+
 
 import socket
 # from socket import *
@@ -22,11 +36,20 @@ IP_ADDR = '127.0.0.1'
 IP_PORT = 53
 BUFFER_SIZE = 512
 
-CONFDIR = '/etc/DNSblackhole'
+CONFDIR = '/etc/BlackHoleDNS'
 verbosityGlobal = 2
+NXDOMAINfileTimestamp = 0
 
+
+
+
+
+## #######################################################
 
 def parseArgs(keywords):
+	"""
+	Handle command line arguments by setting appropriate values
+	"""
 	#print "keywords: %r,  len keywords: %d" % (keywords, len(keywords))
 	for oneWord in keywords:
 		match = None
@@ -48,6 +71,8 @@ def parseArgs(keywords):
 			print "\nWARNING: Unrecognized argument: ", oneWord
 			raise SystemExit
 
+
+## Parse command line arguments if given (argv[0] is script name):
 if (len(argv) > 1):
 	args = argv[1:]
 	## print "ARGS: %r,  len ARGS: %d" % (args, len(args))
@@ -61,6 +86,8 @@ NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
 
 
 
+
+
 ## #######################################################
 
 def loadNXDOMAINfile():
@@ -70,9 +97,11 @@ def loadNXDOMAINfile():
 	"""
 	global NXDOMAINs
 	global NXDOMAINfile
+
 	## Get the timestamp of that file, may check it for changes and
 	## auto-reload it:
 	try:
+		global NXDOMAINfileTimestamp
 		NXDOMAINfileTimestamp = stat(NXDOMAINfile).st_mtime
 		NXDOMAINs = open(NXDOMAINfile, 'r').read().splitlines()
 	except:
@@ -170,10 +199,11 @@ class ClientThread(Thread):
 		Thread.__init__(self)
 		self.ip = ip
 		self.port = port
-		print "[+] New thread started for "+ip+":"+str(port)
+		logMessage(msg="[+] New thread started for "+ip+":"+str(port),
+			 verb=2)
 
 	def run(self):
-		print "ClientThread()"
+		## print "ClientThread()"
 		logMessage(msg=format("Connection: client_ip: %s, %i bytes" 
 						% (client_ip, len(data) ) ) , verb=1)
 
@@ -185,13 +215,13 @@ class ClientThread(Thread):
 		oneQuery.setResponseFlag()
 		oneQuery.setRecursionOff()
 
-		query_domain = oneQuery.getQuestionNameCanonical()
-		nxdomainFound = False
 
+		query_domain = oneQuery.getQuestionNameCanonical()
 		logMessage( msg="Question is for: " + query_domain,
 			verb=1)
 
 		## Check for a black-holed domain name:
+		nxdomainFound = False
 		for domain in NXDOMAINs:
 			## print "DOMAIN being tested:", domain
 			if query_domain.endswith(domain ):
@@ -199,9 +229,14 @@ class ClientThread(Thread):
 				oneQuery.NXDOMAIN()
 				oneQuery.subAnswer()
 				nxdomainFound = True
-				continue
+				break
 
 
+		"""
+		Black holes get NXDOMAIN, "my.ip" gets real reply,
+		possibly-valid but unknown domains get SERVFAIL,
+		 i.e. "don't know"
+		"""
 		if not nxdomainFound:
 			if query_domain[0:5] == 'my.ip':
 				## True when looking for WAN-side IP via:
@@ -456,18 +491,26 @@ class DNSquery:
 
 
 	def SERVFAIL(self):
-		print "CLASS: SRVFAIL before:", self.query_byte_4, \
-			" binary: ", format(self.query_byte_4, '08b')
+		logMessage(msg=format(
+			"SERVFAIL() before toggle: %d  binary: %s"
+			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
+			verb=3)
 		self.query_byte_4 = self.query_byte_4 | 2
-		print "CLASS: SRVFAIL after:", self.query_byte_4, \
-			" binary: ", format(self.query_byte_4, '08b')
+		logMessage(msg=format(
+			"SERVFAIL() after  toggle: %d  binary: %s"
+			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
+			verb=3)
 
 	def NXDOMAIN(self):
-		print "CLASS: NXDOMAIN before:", self.query_byte_4, \
-			" binary: ", format(self.query_byte_4, '08b')
+		logMessage(msg=format(
+			"NXDOMAIN() before toggle: %d  binary: %s"
+			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
+			verb=3)
 		self.query_byte_4 = self.query_byte_4 | 3
-		print "CLASS: NXDOMAIN after:", self.query_byte_4, \
-			" binary: ", format(self.query_byte_4, '08b')
+		logMessage(msg=format(
+			"NXDOMAIN() after  toggle: %d  binary: %s"
+			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
+			verb=3)
 
 	def REFUSED(self):
 		print "CLASS: REFUSED before:", self.query_byte_4, \
@@ -484,11 +527,15 @@ class DNSquery:
 			" binary: ", format(self.query_byte_4, '08b')
 
 	def NOTAUTH(self):
-		print "CLASS: NOT FOUND (NOT AUTH) before:", self.query_byte_4, \
-			" binary: ", format(self.query_byte_4, '08b')
+		logMessage(msg=format(
+			"NOTAUTH(NOT FOUND) before toggle: %d  binary: %s"
+			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
+			verb=3)
 		self.query_byte_4 = self.query_byte_4 | 9
-		print "CLASS: NOT FOUND (NOT AUTH) after: ", self.query_byte_4, \
-			" binary: ", format(self.query_byte_4, '08b')
+		logMessage(msg=format(
+			"NXDOMAIN(NOT FOUND) after  toggle: %d  binary: %s"
+			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
+			verb=3)
 
 	def NOTZONE(self):
 		print "CLASS: NOTZONE before:", self.query_byte_4, \
