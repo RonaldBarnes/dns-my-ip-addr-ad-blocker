@@ -3,9 +3,13 @@
 ## i.e. ads.doubleclick.net will get NXDOMAIN because
 ##  doubleclick.net is in this file.
 ##
+## All domains get converted to lowercase for matching, so
+## case does not matter here.
+##
 doubleclick.net
 google-ad-services.com
 googleadservices.com
+outbrain.com
 smaato.net
 mocean.mobi
 smartadserver.com

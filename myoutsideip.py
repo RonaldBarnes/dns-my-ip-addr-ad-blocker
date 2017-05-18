@@ -39,7 +39,7 @@ BUFFER_SIZE = 512
 CONFDIR = '/etc/BlackHoleDNS'
 verbosityGlobal = 2
 NXDOMAINfileTimestamp = 0
-
+logFile = '/var/log/BlackHoleDNS.log'
 
 
 
@@ -58,14 +58,21 @@ def parseArgs(keywords):
 			#print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
 			global verbosityGlobal
 			verbosityGlobal = int(match.group(2) )
-			print "--debug: ", verbosityGlobal
+			print match.group(1), verbosityGlobal
 			continue
-		match = re.search('(--conf[ig]*-dir)[=:](.+)', oneWord)
-		if match and len(match.groups() ) == 2:
-			#print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
+		match = re.search('(--conf(?:ig)*(?:-dir)*)[=:](.+)', oneWord)
+		if match and len(match.groups() ) >= 2:
+			# print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
 			global CONFDIR
 			CONFDIR = match.group(2)
-			print "--confdir:", CONFDIR
+			print match.group(1), CONFDIR
+			continue
+		match = re.search('(--log)-?(?:file)*[=:](.+)', oneWord)
+		if match and len(match.groups() ) >= 2:
+			#print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
+			global logFile
+			logFile = match.group(2)
+			print match.group(1), logFile
 			continue
 		if match == None:
 			print "\nWARNING: Unrecognized argument: ", oneWord
@@ -115,7 +122,8 @@ def loadNXDOMAINfile():
 	index = 0
 
 	while index < len(NXDOMAINs):
-		NXDOMAINs[index] = re.sub('[\t ]*#+.*$','', NXDOMAINs[index] )
+		NXDOMAINs[index] = re.sub('[\t ]*#+.*$','', \
+			NXDOMAINs[index] ).lower()
 #		if index < 10:
 #			print "%03d \"%s\"" % (index+1, NXDOMAINs[index] )
 		if NXDOMAINs[index][0:1] == 'X'  or  len(NXDOMAINs[index]) == 0:
@@ -199,7 +207,8 @@ class ClientThread(Thread):
 		Thread.__init__(self)
 		self.ip = ip
 		self.port = port
-		logMessage(msg="[+] New thread started for "+ip+":"+str(port),
+		logMessage(msg="[+] New thread started for "+ip+":"+str(port)
+			 + ' -------------------------------',
 			 verb=2)
 
 	def run(self):
@@ -216,7 +225,7 @@ class ClientThread(Thread):
 		oneQuery.setRecursionOff()
 
 
-		query_domain = oneQuery.getQuestionNameCanonical()
+		query_domain = oneQuery.getQuestionNameCanonical().lower()
 		logMessage( msg="Question is for: " + query_domain,
 			verb=1)
 
@@ -348,10 +357,10 @@ class DNSquery:
 		## or for adding fancy (c) notices
 		self.addl_rec_count = self.query_header[10:12]
 		self.addl_rec_count, = unpack('!H', self.addl_rec_count)
-		logMessage(msg="addl_rec_count: "
+		logMessage(msg="Received query's addl_rec_count: "
 			 + str(self.addl_rec_count), verb=2)
 		##
-		## NOTE: dig has this set to 1 addl record, and most 
+		## NOTE: "dig" has this set to 1 addl record, and most 
 		## servers send it back unchanged, without an addl record
 		if (self.addl_rec_count == 1):
 			self.subAdditional()
