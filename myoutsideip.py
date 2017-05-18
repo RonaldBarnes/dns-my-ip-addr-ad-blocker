@@ -7,13 +7,15 @@ from struct import *
 from sys import argv, exc_info
 import re
 from os import stat
+from threading import Thread
+from SocketServer import ThreadingMixIn
 
 
 ## print "ARGV: %r,  len ARGV: %d" % (argv, len(argv))
 
 
 ## http://www.tcpipguide.com/free/t_DNSMessageHeaderandQuestionSectionFormat.htm
-
+## https://docs.python.org/2/library/socketserver.html#socketserver-udpserver-example
 
 IP_ADDR = '0.0.0.0'
 IP_ADDR = '127.0.0.1'
@@ -144,6 +146,103 @@ def logMessage(msgBare = None, verbBare = None, **keywords):
 
 
 
+
+
+
+
+## #######################################################
+
+class ClientThread(Thread):
+
+	def __init__(self, ip, port):
+		Thread.__init__(self)
+		self.ip = ip
+		self.port = port
+		print "[+] New thread started for "+ip+":"+str(port)
+
+	def run(self):
+		print "ClientThread()"
+		logMessage(msg=format("Connection: client_ip: %s, %i bytes" 
+						% (client_ip, len(data) ) ) , verb=1)
+
+		logMessage(msg="Received query data: " + repr(data), verb=4 )
+
+
+		## Build a query object, set response flag, etc:
+		oneQuery = DNSquery(data)
+		oneQuery.setResponseFlag()
+		oneQuery.setRecursionOff()
+
+		query_domain = oneQuery.getQuestionNameCanonical()
+		nxdomainFound = False
+
+		logMessage( msg="Question is for: " + query_domain,
+			verb=1)
+
+		## Check for a black-holed domain name:
+		for domain in NXDOMAINs:
+			## print "DOMAIN being tested:", domain
+			if query_domain.endswith(domain ):
+				logMessage( msg='NXDOMAIN match: ' + domain, verb=2)
+				oneQuery.NXDOMAIN()
+				oneQuery.subAnswer()
+				nxdomainFound = True
+				continue
+
+
+		if not nxdomainFound:
+			if query_domain[0:5] == 'my.ip':
+				## True when looking for WAN-side IP via:
+				## dig my.ip @[this-server]
+				## Replicates dig my.ip @outsideip.net
+				oneQuery.ResourceRec.append( \
+					oneQuery.createResourceRecord(oneQuery.getQNames(), \
+					oneQuery.QType, oneQuery.QClass, 0, client_ip))
+				oneQuery.addAnswer()
+
+				## Add a boastful TXT RR, because why not?
+				oneQuery.ResourceRec.append( \
+					oneQuery.createResourceRecord(oneQuery.getQNames(), \
+					pack('!H', 16), \
+					oneQuery.QClass, 86400, \
+					['(c)', 'Ronald Barnes', '2017'] ))
+				oneQuery.addAdditional()
+			else:
+				## Standard reply for non-recursive "Not Found"
+				## Test this via: dig cbc.ca @8.8.8.8 +norecurse
+				oneQuery.SERVFAIL()
+
+
+
+
+
+
+#	oneQuery.ResourceRec.append(y.createResourceRecord(oneQuery.getQNames(), \
+#		pack('!H', 16), oneQuery.QClass, 86400, 'QANSWER'))
+#	oneQuery.addAdditional()
+
+		# logMessage(msg=format("oneQuery.ResourceRec: %r"
+		#	% oneQuery.ResourceRec), verb=4)
+
+		retval = oneQuery.getHeader() \
+		+ oneQuery.questionName \
+		+ ''.join(oneQuery.ResourceRec)  \
+
+
+
+#		print "RETVAL1: len: %d  value: %s" % (len(retval), repr(retval))
+
+		s.sendto(retval, (client_ip, client_port)) # client_ip_port)
+
+
+
+
+
+
+
+
+
+## #######################################################
 
 class DNSquery:
 
@@ -534,13 +633,18 @@ except:
 
 
 ## #######################################################
+threads = []
 
 while(True):
 	## data = conn.recv(BUFFER_SIZE)
-	data, client_ip_port = s.recvfrom(BUFFER_SIZE)
-	client_ip, client_port = (client_ip_port)
+	(data, (client_ip, client_port)) = s.recvfrom(BUFFER_SIZE)
+	## client_ip, client_port = (client_ip_port)
 	if not data: break
 	# data = data.rstrip('\r\n')
+	newthread = ClientThread(client_ip,client_port)
+	newthread.start()
+	threads.append(newthread)
+
 
 	## ##############################################################
 	## Header format (12 bytes)
@@ -565,87 +669,17 @@ while(True):
 	## AR Count: Additional Record count: 2 bytes
 	## ##############################################################
 
-	logMessage(msg=format("Connection: client_ip: %s, %i bytes" 
-					   % (client_ip, len(data) ) ) , verb=1)
-
-	logMessage(msg="Received query data: " + repr(data), verb=4 )
-
-
-	## Build a query object, set response flag, etc:
-	oneQuery = DNSquery(data)
-	oneQuery.setResponseFlag()
-	oneQuery.setRecursionOff()
 
 
 
 
-
-
-
-	query_domain = oneQuery.getQuestionNameCanonical()
-	nxdomainFound = False
-
-	logMessage( msg="Question is for: " + query_domain,
-		verb=1)
-
-	## Check for a black-holed domain name:
-	for domain in NXDOMAINs:
-		## print "DOMAIN being tested:", domain
-		if query_domain.endswith(domain ):
-			logMessage( msg='NXDOMAIN match: ' + domain, verb=2)
-			oneQuery.NXDOMAIN()
-			oneQuery.subAnswer()
-			nxdomainFound = True
-			continue
-
-
-	if not nxdomainFound:
-		if query_domain[0:5] == 'my.ip':
-			## True when looking for WAN-side IP via:
-			## dig my.ip @[this-server]
-			## Replicates dig my.ip @outsideip.net
-			oneQuery.ResourceRec.append( \
-				oneQuery.createResourceRecord(oneQuery.getQNames(), \
-				oneQuery.QType, oneQuery.QClass, 0, client_ip))
-			oneQuery.addAnswer()
-
-			## Add a boastful TXT RR, because why not?
-			oneQuery.ResourceRec.append( \
-				oneQuery.createResourceRecord(oneQuery.getQNames(), \
-				pack('!H', 16), \
-				oneQuery.QClass, 86400, \
-				['(c)', 'Ronald Barnes', '2017'] ))
-			oneQuery.addAdditional()
-		else:
-			## Standard reply for non-recursive "Not Found"
-			## Test this via: dig cbc.ca @8.8.8.8 +norecurse
-			oneQuery.SERVFAIL()
-
-
-
-
-
-
-#	oneQuery.ResourceRec.append(y.createResourceRecord(oneQuery.getQNames(), \
-#		pack('!H', 16), oneQuery.QClass, 86400, 'QANSWER'))
-#	oneQuery.addAdditional()
-
-	# print "oneQuery.ResourceRec: %r", oneQuery.ResourceRec
-
-	retval = oneQuery.getHeader() \
-	+ oneQuery.questionName \
-	+ ''.join(oneQuery.ResourceRec)  \
-
-
-
-#	print "RETVAL1: len: %d  value: %s" % (len(retval), repr(retval))
-
-	s.sendto(retval, client_ip_port)
 
 	## raise SystemExit  ## aka: sys.exit but without import sys
 
 
 
+	for t in threads:
+		t.join()
 
 
 
