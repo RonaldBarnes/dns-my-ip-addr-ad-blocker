@@ -60,7 +60,14 @@ NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
 
 
 
+
+## #######################################################
+
 def loadNXDOMAINfile():
+	"""
+	Load the file of domains to "black-hole", i.e. give not-found
+	message for (aka NXDOMAIN)
+	"""
 	global NXDOMAINs
 	global NXDOMAINfile
 	## Get the timestamp of that file, may check it for changes and
@@ -102,6 +109,8 @@ loadNXDOMAINfile()
 
 
 
+## #######################################################
+
 ## A logging util that accepts 2 forms of parameters:
 ## logMessage('A message', 4)
 ## or
@@ -116,10 +125,13 @@ loadNXDOMAINfile()
 
 ##def logMessage(message, *positional_parameters, **keyword_parameters):
 def logMessage(msgBare = None, verbBare = None, **keywords):
+	"""
+	All logging in central location, with customizable
+	verbosity setting (via --debug=[0-4] as startup argument.
+	"""
 	verbosityLocal = None
 	global verbosityGlobal
 
-	#print "key: ", keywords
 
 	if ('msg' in keywords):
 		msg = keywords['msg']
@@ -196,13 +208,13 @@ class ClientThread(Thread):
 				## dig my.ip @[this-server]
 				## Replicates dig my.ip @outsideip.net
 				oneQuery.ResourceRec.append( \
-					oneQuery.createResourceRecord(oneQuery.getQNames(), \
+					oneQuery.createResourceRecord(oneQuery.QNames, \
 					oneQuery.QType, oneQuery.QClass, 0, client_ip))
 				oneQuery.addAnswer()
 
 				## Add a boastful TXT RR, because why not?
 				oneQuery.ResourceRec.append( \
-					oneQuery.createResourceRecord(oneQuery.getQNames(), \
+					oneQuery.createResourceRecord(oneQuery.QNames, \
 					pack('!H', 16), \
 					oneQuery.QClass, 86400, \
 					['(c)', 'Ronald Barnes', '2017'] ))
@@ -213,24 +225,13 @@ class ClientThread(Thread):
 				oneQuery.SERVFAIL()
 
 
-
-
-
-
-#	oneQuery.ResourceRec.append(y.createResourceRecord(oneQuery.getQNames(), \
-#		pack('!H', 16), oneQuery.QClass, 86400, 'QANSWER'))
-#	oneQuery.addAdditional()
-
-		# logMessage(msg=format("oneQuery.ResourceRec: %r"
-		#	% oneQuery.ResourceRec), verb=4)
+		logMessage(msg=format("oneQuery.ResourceRec: %r"
+			% oneQuery.ResourceRec), verb=4)
 
 		retval = oneQuery.getHeader() \
 		+ oneQuery.questionName \
 		+ ''.join(oneQuery.ResourceRec)  \
 
-
-
-#		print "RETVAL1: len: %d  value: %s" % (len(retval), repr(retval))
 
 		s.sendto(retval, (client_ip, client_port)) # client_ip_port)
 
@@ -245,7 +246,11 @@ class ClientThread(Thread):
 ## #######################################################
 
 class DNSquery:
-
+	"""
+	Turn DNS query into object, manipulate flag fields/bits,
+	set status flags/bits, compose appropriate ResourceRecord
+	for reply.
+	"""
 	## Type "A" is only one relevant to "dig my.ip", others may be
 	## implemented if need arises.  This is a subset of possiblities.
 	qtypeCodes = {1: "A", 2: "NS",
@@ -379,17 +384,19 @@ class DNSquery:
 			 verb=3)
 
 
-#	def questionName(self):
-#		## Return question to client:
-#		return self.questionName
+
 
 	def getQuestionNameCanonical(self):
-		## Return READABLE question name for logging
-		## The binary lengths stripped, separators of "." added
+		"""
+		Return human-readable "question name" (domain) for logging, etc.
+		The binary lengths stripped, separators of "." added.
+		"""
 		return ".".join(self.QNames)
 
-	def getQNames(self):
-		return self.QNames
+#	def getQNames(self):
+#		logMessage(msg=format("getQNames() returning: %r" % self.QNames),
+#			 verb=4)
+#		return self.QNames
 
 
 	def setResponseFlag(self):
@@ -547,7 +554,9 @@ class DNSquery:
 				% (oneName, lenName)), verb=3)
 			returnString += pack("!B", lenName)
 			returnString += oneName
+		## Finish off name with NULL byte:
 		returnString += pack("!B", 0)
+		## Followed by Type (MX), Class (IN), and TTL:
 		returnString += QType + QClass
 		returnString += pack("!i", QTTL)
 
