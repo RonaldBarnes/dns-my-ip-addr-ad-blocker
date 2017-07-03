@@ -46,14 +46,16 @@ import time
 ## http://www.tcpipguide.com/free/t_DNSMessageHeaderandQuestionSectionFormat.htm
 ## https://docs.python.org/2/library/socketserver.html#socketserver-udpserver-example
 
+IP_ADDR = '127.0.0.1'		## for localhost testing
 IP_ADDR = '0.0.0.0'
-IP_ADDR = '127.0.0.1'
-IP_PORT = 53535
+IP_PORT = 53535				## for localhost testing
+IP_PORT = 53
 BUFFER_SIZE = 512
 
 CONFDIR = '/etc/BlackHoleDNS'
 verbosityGlobal = 2
 NXDOMAINfileTimestamp = 0
+## change log file default name to something sane, please?
 logFile = '/var/log/BlackHoleDNS.log'
 
 
@@ -359,7 +361,7 @@ class DNSquery:
 		## Retrieve it with getHeader()
 		self.query_header = query[:12]
 		self.query_id, = unpack('!H', self.query_header[:2] )
-		debugMessage( msg="QueryID: " + str(self.query_id), verb=1)
+		debugMessage( msg="QueryID: " + str(self.query_id), verb=2)
 
 		## Byte 3 of header contains question / response bit
 		self.query_byte_3 = self.query_header[2:3]
@@ -727,6 +729,8 @@ try:
 	debugMessage(format("Bound to IP :: port --> %s :: %s " \
 		% (IP_ADDR, IP_PORT) ), \
 		verb=0);
+	print >> logFH, time.strftime('%Y-%m-%d %H:%M:%S'), \
+		"STARTED LISTENING"
 except:
 	print "\nERROR binding to socket at %s :: %d:\n\t%s" \
 		% (IP_ADDR, IP_PORT, exc_info()[1] )
