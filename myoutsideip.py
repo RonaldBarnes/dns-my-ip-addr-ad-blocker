@@ -23,9 +23,24 @@ import re
 from os import stat
 from threading import Thread
 from SocketServer import ThreadingMixIn
-
+import time
 
 ## print "ARGV: %r,  len ARGV: %d" % (argv, len(argv))
+
+
+## print "strftime:", time.strftime('%Y-%m-%d %H:%M:%S', time.localtime() )
+
+
+## Identical (in this invocation) to ctime() (hate it...)
+## print "asctime:", time.asctime()
+##
+## I hate, Hate, HATE ctime(): "Sun Jul  2 20:34:55 2017"
+## print "ctime:", time.ctime()
+
+
+## raise SystemExit
+
+
 
 
 ## http://www.tcpipguide.com/free/t_DNSMessageHeaderandQuestionSectionFormat.htm
@@ -33,7 +48,7 @@ from SocketServer import ThreadingMixIn
 
 IP_ADDR = '0.0.0.0'
 IP_ADDR = '127.0.0.1'
-IP_PORT = 53
+IP_PORT = 53535
 BUFFER_SIZE = 512
 
 CONFDIR = '/etc/BlackHoleDNS'
@@ -136,6 +151,16 @@ def loadNXDOMAINfile():
 
 loadNXDOMAINfile()
 
+
+## Open log file
+try:
+	logFH = open(logFile, 'ab')	## append, binary (unlikely useful)
+	print "Opened log file %s" % logFile
+except:
+	print "ERROR:", exc_info()[1]
+	raise SystemExit
+
+
 ## raise SystemExit
 
 
@@ -148,20 +173,27 @@ loadNXDOMAINfile()
 
 ## #######################################################
 
-## A logging util that accepts 2 forms of parameters:
-## logMessage('A message', 4)
+## A logging utility for debugging messages. NOT for logging
+## queries to a log file.
+##
+## This requires some disambiguation...
+##
+## Accepts 2 forms of parameters; mutually exclusive:
+##
+## debugMessage('A message', 4)
 ## or
-## logMessage(msg='A message', verb=4)
+## debugMessage(msg='A message', verb=4)
 ## 
 ## The second format is handy when expanding functionality at
 ## later date.
 ##
 ## Note that both methods do not work in same invocation
 ##
-## Logging default level (4 is a lot, 0 is nearly nothing):
+## Logging default level is 2 (4 is a lot, 0 is nearly nothing):
+## See verbosityGlobal variable above for its initialization.
 
-##def logMessage(message, *positional_parameters, **keyword_parameters):
-def logMessage(msgBare = None, verbBare = None, **keywords):
+##def debugMessage(message, *positional_parameters, **keyword_parameters):
+def debugMessage(msgBare = None, verbBare = None, **keywords):
 	"""
 	All logging in central location, with customizable
 	verbosity setting (via --debug=[0-4] as startup argument.
@@ -207,16 +239,16 @@ class ClientThread(Thread):
 		Thread.__init__(self)
 		self.ip = ip
 		self.port = port
-		logMessage(msg="[+] New thread started for "+ip+":"+str(port)
+		debugMessage(msg="[+] New thread started for "+ip+":"+str(port)
 			 + ' -------------------------------',
 			 verb=2)
 
 	def run(self):
 		## print "ClientThread()"
-		logMessage(msg=format("Connection: client_ip: %s, %i bytes" 
+		debugMessage(msg=format("Connection: client_ip: %s, %i bytes" 
 						% (client_ip, len(data) ) ) , verb=1)
 
-		logMessage(msg="Received query data: " + repr(data), verb=4 )
+		debugMessage(msg="Received query data: " + repr(data), verb=4 )
 
 
 		## Build a query object, set response flag, etc:
@@ -226,7 +258,7 @@ class ClientThread(Thread):
 
 
 		query_domain = oneQuery.getQuestionNameCanonical().lower()
-		logMessage( msg="Question is for: " + query_domain,
+		debugMessage( msg="Question is for: " + query_domain,
 			verb=1)
 
 		## Check for a black-holed domain name:
@@ -234,7 +266,7 @@ class ClientThread(Thread):
 		for domain in NXDOMAINs:
 			## print "DOMAIN being tested:", domain
 			if query_domain.endswith(domain ):
-				logMessage( msg='NXDOMAIN match: ' + domain, verb=2)
+				debugMessage( msg='NXDOMAIN match: ' + domain, verb=2)
 				oneQuery.NXDOMAIN()
 				oneQuery.subAnswer()
 				nxdomainFound = True
@@ -269,7 +301,7 @@ class ClientThread(Thread):
 				oneQuery.SERVFAIL()
 
 
-		logMessage(msg=format("oneQuery.ResourceRec: %r"
+		debugMessage(msg=format("oneQuery.ResourceRec: %r"
 			% oneQuery.ResourceRec), verb=4)
 
 		retval = oneQuery.getHeader() \
@@ -280,7 +312,16 @@ class ClientThread(Thread):
 		s.sendto(retval, (client_ip, client_port)) # client_ip_port)
 
 
+		## This goes to log file:
 
+#		logFH.writelines( time.strftime('%Y-%m-%d %H:%M:%S', \
+#			time.localtime() ), client_ip, query_domain, nxdomainFound )
+#		print >> logFile (time.strftime('%Y-%m-%d %H:%M:%S', \
+#			time.localtime() ), client_ip, query_domain, nxdomainFound )
+		print >> logFH, time.strftime('%Y-%m-%d %H:%M:%S', \
+			time.localtime() ), client_ip, query_domain, nxdomainFound
+
+		logFH.flush()
 
 
 
@@ -318,46 +359,46 @@ class DNSquery:
 		## Retrieve it with getHeader()
 		self.query_header = query[:12]
 		self.query_id, = unpack('!H', self.query_header[:2] )
-		logMessage( msg="QueryID: " + str(self.query_id), verb=1)
+		debugMessage( msg="QueryID: " + str(self.query_id), verb=1)
 
 		## Byte 3 of header contains question / response bit
 		self.query_byte_3 = self.query_header[2:3]
 		self.query_byte_3, = unpack('!B', self.query_byte_3)
 		## set response flag ON
 		# self.response = self.query_byte_3 ^ 128
-		logMessage( msg="byte 3 w/ query/response flag:" +
+		debugMessage( msg="byte 3 w/ query/response flag:" +
 			 format(self.query_byte_3, '08b'), verb=3)
 
 		## Byte 4 of header contains RCode / error code and
 		## recursion flag:
 		self.query_byte_4 = self.query_header[3:4]
 		self.query_byte_4, = unpack('!B', self.query_byte_4)
-		logMessage(msg="byte 4 w/ recursion flag: "
+		debugMessage(msg="byte 4 w/ recursion flag: "
 			 + format(self.query_byte_4, '08b'), verb=3)
 
 		## Only intending to handle one question regardless of count
 		self.question_count = self.query_header[4:6]
 		self.question_count, = unpack('!H', self.question_count)
-		logMessage(msg="question_count: " 
+		debugMessage(msg="question_count: " 
 			 + str(self.question_count), verb=3)
 
 		## Answer count will be 1 in most / all cases
 		self.answer_count = self.query_header[6:8]
 		self.answer_count, = unpack('!H', self.answer_count)
-		logMessage(msg="answer_count: " 
+		debugMessage(msg="answer_count: " 
 			 + str(self.answer_count), verb=4)
 
 		## Unlikely to add auth records, ought to always be zero
 		self.auth_rec_count = self.query_header[8:10]
 		self.auth_rec_count, = unpack('!H', self.auth_rec_count)
-		logMessage(msg="auth_rec_count: "
+		debugMessage(msg="auth_rec_count: "
 			 + str(self.auth_rec_count), verb=4)
 
 		## May have additional records for TXT or ANY type queries,
 		## or for adding fancy (c) notices
 		self.addl_rec_count = self.query_header[10:12]
 		self.addl_rec_count, = unpack('!H', self.addl_rec_count)
-		logMessage(msg="Received query's addl_rec_count: "
+		debugMessage(msg="Received query's addl_rec_count: "
 			 + str(self.addl_rec_count), verb=2)
 		##
 		## NOTE: "dig" has this set to 1 addl record, and most 
@@ -371,7 +412,7 @@ class DNSquery:
 		## so 0x03 would indicate next part is "www", for example:
 		##
 		self.questionName = data[12:]
-		## logMessage(msg="questionName: \"%s\"" \
+		## debugMessage(msg="questionName: \"%s\"" \
 		##		% repr(self.questionName), verb=4)
 
 		## Parse out "question name" minus length bytes & NULL
@@ -400,7 +441,7 @@ class DNSquery:
 				self.questionName[offsetNamePart:lenNamePart] )
 #			print "NAME PART #", kounterNameParts, 
 #			print " from: ", offsetNamePart, " to: ", lenNamePart, 
-			logMessage(msg= "QNAMES is: " + str(self.QNames ), verb=3)
+			debugMessage(msg= "QNAMES is: " + str(self.QNames ), verb=3)
 			offsetNamePart = lenNamePart
 			lenNamePart += 1
 
@@ -414,16 +455,16 @@ class DNSquery:
 		offsetNamePart += 2
 		lenNamePart += 2
 		self.QClass = self.questionName[offsetNamePart:lenNamePart]
-		logMessage(msg="QType (A vs MX): " 
+		debugMessage(msg="QType (A vs MX): " 
 			 + self.qtypeCodes[ unpack('!H', self.QType)[0]]
 			 + " (code %d)" % unpack('!H', self.QType)[0]
 			 , verb=2)
 
-		logMessage( "QClass (IN=1): ", unpack('!H', self.QClass)[0],
+		debugMessage( "QClass (IN=1): ", unpack('!H', self.QClass)[0],
 			 verb=4)
 
 		self.questionName = self.questionName[:lenNamePart]
-		logMessage(msg=format("questionName TRIMMED (len: %d): \"%s\"" %
+		debugMessage(msg=format("questionName TRIMMED (len: %d): \"%s\"" %
 			 (len(self.questionName), repr(self.questionName) ) ),
 			 verb=3)
 
@@ -438,7 +479,7 @@ class DNSquery:
 		return ".".join(self.QNames)
 
 #	def getQNames(self):
-#		logMessage(msg=format("getQNames() returning: %r" % self.QNames),
+#		debugMessage(msg=format("getQNames() returning: %r" % self.QNames),
 #			 verb=4)
 #		return self.QNames
 
@@ -448,15 +489,15 @@ class DNSquery:
 		self.query_byte_3, = unpack('!B', self.query_header[2:3])
 		## set response flag ON
 		# self.response = self.query_byte_3 ^ 128
-		print "Response flag set: from: ", format(self.query_byte_3, '08b'),
+##		print "Response flag set: from: ", format(self.query_byte_3, '08b'),
 		self.query_byte_3 = self.query_byte_3 ^ 128
 #		self.query_header = self.query_header[:2] \
 #			+ pack('!B', self.query_byte_3) \
 #			+ self.query_header[4:]
 		## ERROR on substring assignment:
 		## self.query_header[2:3] = pack('!16', unpack('!B', self.query_header[2:3])[0] ^ 128)
-		print " to: ", format(self.query_byte_3, '08b')
-		logMessage( msg="byte 3 w/ query/response flag:" +
+##		print " to: ", format(self.query_byte_3, '08b')
+		debugMessage( msg="byte 3 w/ query/response flag:" +
 			 format(self.query_byte_3, '08b'), verb=3)
 
 	def setRecursionOff(self):
@@ -470,7 +511,7 @@ class DNSquery:
 #		self.query_header = self.query_header[:3] \
 #			+ pack('!B', self.query_byte_4) \
 #			+ self.query_header[5:]
-		logMessage(msg="byte 4 w/ recursion flag:"
+		debugMessage(msg="byte 4 w/ recursion flag:"
 			 + format(self.query_byte_4, '08b'), verb=2)
 
 	def addAnswer(self):
@@ -500,23 +541,23 @@ class DNSquery:
 
 
 	def SERVFAIL(self):
-		logMessage(msg=format(
+		debugMessage(msg=format(
 			"SERVFAIL() before toggle: %d  binary: %s"
 			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
 			verb=3)
 		self.query_byte_4 = self.query_byte_4 | 2
-		logMessage(msg=format(
+		debugMessage(msg=format(
 			"SERVFAIL() after  toggle: %d  binary: %s"
 			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
 			verb=3)
 
 	def NXDOMAIN(self):
-		logMessage(msg=format(
+		debugMessage(msg=format(
 			"NXDOMAIN() before toggle: %d  binary: %s"
 			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
 			verb=3)
 		self.query_byte_4 = self.query_byte_4 | 3
-		logMessage(msg=format(
+		debugMessage(msg=format(
 			"NXDOMAIN() after  toggle: %d  binary: %s"
 			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
 			verb=3)
@@ -536,12 +577,12 @@ class DNSquery:
 			" binary: ", format(self.query_byte_4, '08b')
 
 	def NOTAUTH(self):
-		logMessage(msg=format(
+		debugMessage(msg=format(
 			"NOTAUTH(NOT FOUND) before toggle: %d  binary: %s"
 			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
 			verb=3)
 		self.query_byte_4 = self.query_byte_4 | 9
-		logMessage(msg=format(
+		debugMessage(msg=format(
 			"NXDOMAIN(NOT FOUND) after  toggle: %d  binary: %s"
 			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
 			verb=3)
@@ -583,9 +624,9 @@ class DNSquery:
 	def createResourceRecord( self, QNames, QType, QClass, QTTL, QAnswer):
 	#		print "createResourceRecord! ==========================="
 	#		print "Qnames:", QNames
-		logMessage(msg=format("QType: %r QClass: %r" \
+		debugMessage(msg=format("QType: %r QClass: %r" \
 			% (QType, QClass)), verb=3)
-		logMessage(msg=format( "QAnswer: %r" % QAnswer), verb=3)
+		debugMessage(msg=format( "QAnswer: %r" % QAnswer), verb=3)
 
 		## ANY Query type is handled specially:
 		## Instead return an "Additional" "TXT" record FIRST
@@ -606,7 +647,7 @@ class DNSquery:
 
 		for oneName in QNames:
 			lenName = len(oneName)
-			logMessage(msg=format("One NAME: %s  and length: %d" \
+			debugMessage(msg=format("One NAME: %s  and length: %d" \
 				% (oneName, lenName)), verb=3)
 			returnString += pack("!B", lenName)
 			returnString += oneName
@@ -635,7 +676,7 @@ class DNSquery:
 
 		## TXT records:
 		elif unpack('!H', QType)[0] == 16: #  or  unpack('!H', QType)[0] == 255:
-			logMessage(msg=format("QType == TXT," \
+			debugMessage(msg=format("QType == TXT," \
 				+ " adding fields to RR: len: %d value: %s" \
 					% (len(QAnswer), QAnswer ) ), verb=4)
 
@@ -657,7 +698,7 @@ class DNSquery:
 	#			print "OCTET:", octet
 				returnString += pack("!B", int(octet) )
 
-		logMessage(msg=format(
+		debugMessage(msg=format(
 			"RESOURCE RECORD RETURN len: %d  and VALUE: %s" \
 			% (len(returnString), repr(returnString))
 			), verb=4)
@@ -683,7 +724,7 @@ class DNSquery:
 try:
 	s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	s.bind(( IP_ADDR, IP_PORT))
-	logMessage(format("Bound to IP :: port --> %s :: %s " \
+	debugMessage(format("Bound to IP :: port --> %s :: %s " \
 		% (IP_ADDR, IP_PORT) ), \
 		verb=0);
 except:
