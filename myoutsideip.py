@@ -46,10 +46,10 @@ import time
 ## http://www.tcpipguide.com/free/t_DNSMessageHeaderandQuestionSectionFormat.htm
 ## https://docs.python.org/2/library/socketserver.html#socketserver-udpserver-example
 
-IP_ADDR = '127.0.0.1'		## for localhost testing
 IP_ADDR = '0.0.0.0'
-IP_PORT = 53535				## for localhost testing
+IP_ADDR = '127.0.0.1'		## for localhost testing
 IP_PORT = 53
+IP_PORT = 53535				## for localhost testing
 BUFFER_SIZE = 512
 
 CONFDIR = '/etc/BlackHoleDNS'
@@ -518,27 +518,41 @@ class DNSquery:
 
 	def addAnswer(self):
 		self.answer_count += 1
-		print "NEW answer_count: ", self.answer_count
+		debugMessage(msg= ("NEW answer_count: " \
+			+ str( self.answer_count)), \
+			verb=2)
+#		print "NEW answer_count: ", self.answer_count
 
 	def subAnswer(self):
 		self.answer_count = max(self.answer_count -1, 0)
-		print "NEW answer_count: ", self.answer_count
+#		print "NEW answer_count: ", self.answer_count
+		debugMessage(msg= ("NEW answer_count: " \
+			+ str( self.answer_count)), \
+			verb=2)
 
 	def addAdditional(self):
 		self.addl_rec_count += 1
-		print "NEW additional_count: ", self.answer_count
+		debugMessage(msg= ("NEW additional_count: " \
+			+ str( self.addl_rec_count)), \
+			verb=3)
 
 	def subAdditional(self):
 		self.addl_rec_count = max(self.addl_rec_count - 1, 0)
-		print "NEW additional_count: ", self.addl_rec_count
+		debugMessage(msg= ("NEW additional_count: " \
+			+ str( self.addl_rec_count)), \
+			verb=3)
 
 	def addAuth(self):
 		self.auth_rec_count += 1
-		print "NEW auth_rec_count: ", self.auth_rec_count
+		debugMessage(msg= ("NEW auth_count: " \
+			+ str( self.auth_rec_count)), \
+			verb=3)
 
 	def subAuth(self):
 		self.auth_rec_count = max(self.auth_rec_count - 1, 0)
-		print "NEW auth_rec_count: ", self.auth_rec_count
+		debugMessage(msg= ("NEW auth_count: " \
+			+ str( self.auth_rec_count)), \
+			verb=3)
 
 
 
