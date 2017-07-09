@@ -46,10 +46,10 @@ import time
 ## http://www.tcpipguide.com/free/t_DNSMessageHeaderandQuestionSectionFormat.htm
 ## https://docs.python.org/2/library/socketserver.html#socketserver-udpserver-example
 
-IP_ADDR = '0.0.0.0'
 IP_ADDR = '127.0.0.1'		## for localhost testing
+IP_PORT = 53535			## for localhost testing
+IP_ADDR = '0.0.0.0'
 IP_PORT = 53
-IP_PORT = 53535				## for localhost testing
 BUFFER_SIZE = 512
 
 CONFDIR = '/etc/BlackHoleDNS'

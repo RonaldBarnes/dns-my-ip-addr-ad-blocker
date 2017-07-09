@@ -11,12 +11,11 @@ After=network.target
 # Type=oneshot
 Type=simple
 
+ExecStart=/usr/bin/python /home/uid1/Projects/myoutsideip/myoutsideip.py --config-dir=/home/uid1/Projects/myoutsideip --debug=2
 
-# ExecStart=/usr/bin/python /tmp/myoutsideip.py  --config-dir=/tmp --debug=3
-
-ExecStart=/usr/bin/python /home/ron/Projects/myoutsideip/myoutsideip.py --config-dir=/home/ron/Projects/myoutsideip --debug=3
-
-Restart=always
+# Restart=always
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
+Alias=myip.service
