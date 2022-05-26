@@ -65,3 +65,31 @@ $ dig -p 53535 doubleclick.net @kwvoip.ca
 ;; flags: qr rd ra ad; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 0
 ```
 
+
+
+Server logging for a "my.ip" query:
+
+```
+(*) [+] New thread started for 69.172.190.161:43758 -------------------------------
+(*) Connection: client_ip: 69.172.190.161, 46 bytes
+(*) QueryID: 25828
+(*) Received query's addl_rec_count: 1
+(*) QType (A vs MX): A (code 1)
+(*) byte 4 w/ recursion flag:10100000
+(*) Question is for: my.ip
+(*) NEW answer_count: 1
+```
+
+And for a known ad server:
+
+```
+(*) [+] New thread started for 69.172.190.161:36936 -------------------------------
+(*) Connection: client_ip: 69.172.190.161, 56 bytes
+(*) QueryID: 16868
+(*) Received query's addl_rec_count: 1
+(*) QType (A vs MX): A (code 1)
+(*) byte 4 w/ recursion flag:10100000
+(*) Question is for: doubleclick.net
+(*) NXDOMAIN match: doubleclick.net
+(*) NEW answer_count: 0
+```
