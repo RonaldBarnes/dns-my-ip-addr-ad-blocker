@@ -3,12 +3,12 @@
 """
 BlackHoleDNS:
 
-Return domain not found (NXDOMAIN) for sites included in
-the appropriate file (trackers, ad servers, etc.).
-
-Also supports handy WAN-side IP address identification via
+WAN-side IP address identification via:
 	dig my.ip @[server]
 This replicates the myoutsideip.net service that's gone offline.
+
+Return domain not found (NXDOMAIN) for sites included in
+the file NXDOMAIN.list (trackers, ad servers, etc.).
 
 Recursion is NOT supported, so have a secondary DNS setting
 in your router if this is primary DNS server.
@@ -22,20 +22,12 @@ from sys import argv, exc_info
 import re
 from os import stat
 from threading import Thread
-from SocketServer import ThreadingMixIn
+## Upgrading to python3:
+## from SocketServer import ThreadingMixIn
+from socketserver import ThreadingMixIn
 import time
 
-## print "ARGV: %r,  len ARGV: %d" % (argv, len(argv))
 
-
-## print "strftime:", time.strftime('%Y-%m-%d %H:%M:%S', time.localtime() )
-
-
-## Identical (in this invocation) to ctime() (hate it...)
-## print "asctime:", time.asctime()
-##
-## I hate, Hate, HATE ctime(): "Sun Jul  2 20:34:55 2017"
-## print "ctime:", time.ctime()
 
 
 ## raise SystemExit
@@ -46,65 +38,206 @@ import time
 ## http://www.tcpipguide.com/free/t_DNSMessageHeaderandQuestionSectionFormat.htm
 ## https://docs.python.org/2/library/socketserver.html#socketserver-udpserver-example
 
+
+## IP_ADDR = '0.0.0.0'
+## IP_PORT = 53
 IP_ADDR = '127.0.0.1'		## for localhost testing
 IP_PORT = 53535			## for localhost testing
-IP_ADDR = '0.0.0.0'
-IP_PORT = 53
+
+
 BUFFER_SIZE = 512
 
-CONFDIR = '/etc/BlackHoleDNS'
+## CONFDIR = '/etc/BlackHoleDNS'
+CONFDIR = '.'
 verbosityGlobal = 2
 NXDOMAINfileTimestamp = 0
 ## change log file default name to something sane, please?
-logFile = '/var/log/BlackHoleDNS.log'
+logFile = '/var/log/dns-blackhole.log'
 
 
 
 
+
+
+
+
+
+
+
+
+## #######################################################
+##
+## A logging utility for debugging messages. NOT for logging
+## queries to a log file.
+##
+## This requires some disambiguation...
+##
+## Accepts 3 forms of parameters; mutually exclusive:
+##
+## debugMessage('A message', 4)
+## or
+## debugMessage(msg='A message', verb=4)
+## or
+## debugMessage("A message")
+##
+## The third format uses the global debug level (default 2, can be set
+## via the --debug: argument at startup)
+##
+## The second format is handy when expanding functionality at
+## later date.
+##
+## Note that methods cannot be mixed in same invocation
+##
+## Logging default level is 2 (4 is a lot, 0 is nearly nothing):
+##
+## See verbosityGlobal variable above for its initialization.
+##
+## #######################################################
+
+##def debugMessage(message, *positional_parameters, **keyword_parameters):
+def debugMessage(msgBare = None, verbBare = None, **keywords):
+	"""
+	All logging in central location, with customizable
+	verbosity setting (via --debug=[0-4] as startup argument.
+	"""
+
+	## verbosityLocal is set by passed parameters; can be different then global
+	verbosityLocal = None
+	global verbosityGlobal
+
+	## Check for msg="A message", verb=4 format of invocation:
+	if ('msg' in keywords):
+		msg = keywords['msg']
+		## print( 'MESSAGE: ', msg )
+	elif (msgBare == None):
+		print( 'NO MESSAGE...' )
+		return
+	else:
+		msg = msgBare
+	##
+	if ('verb' in keywords):
+		verbosityLocal = keywords['verb']
+		## print( 'VERB: ', verbosityLocal )
+	elif (verbBare == None):
+		verbosityLocal = verbosityGlobal
+	else:
+		verbosityLocal = verbBare
+
+	## print( "verbosityLocal: {}  and verbosityGlobal: {}".format(
+	##	verbosityLocal,
+	##	verbosityGlobal
+	##	))
+
+
+	## This invocation may use a debug level (verb=N) different than the
+	## global / default level.
+	##
+	## e.g. If a message is critical to display at any global debug level, use
+	## debugMessage("Important!", 0)
+	## But, if it's merely a debug notice, not normally displayed, use
+	## debugMessage("blah blah blah", 4)
+	if verbosityLocal <= verbosityGlobal:
+		print( " * {}".format(msg ) )
+
+
+
+
+
+
+
+
+## #######################################################
+## Recognized arguments:
+##	--debug:[0-4]
+##		Sets the output verbosity levels: 0 (min) to 4 (max)
+##	--config:
+##		Sets the config file location directory
+##	--log
+##	--log-file:
+##		Sets the log file
+##	--port:
+##		Sets the listening port
 ## #######################################################
 
 def parseArgs(keywords):
 	"""
 	Handle command line arguments by setting appropriate values
 	"""
-	#print "keywords: %r,  len keywords: %d" % (keywords, len(keywords))
+	## print( "keywords: %r,  len keywords: %d" % (keywords, len(keywords)) )
+	##
+	## Parse keywords for recognized arguments:
 	for oneWord in keywords:
 		match = None
+
+		##
+		## Check for --debug
 		match = re.match('(--debug)[=:](.+)', oneWord)
 		if match and len(match.groups() ) == 2:
-			#print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
+			## print( "KEYWORD:", match.group(1), " VALUE:", match.group(2) )
 			global verbosityGlobal
 			verbosityGlobal = int(match.group(2) )
-			print match.group(1), verbosityGlobal
+			## print( match.group(1), verbosityGlobal )
+			debugMessage( match.group(1) + " set to " + str(verbosityGlobal), 1 )
 			continue
-		match = re.search('(--conf(?:ig)*(?:-dir)*)[=:](.+)', oneWord)
+
+		##
+		## Check for --conf --config --conf-dir --config-dir
+		match = re.search('(--conf(?:ig)?(?:-dir)*)[=:](.+)', oneWord)
 		if match and len(match.groups() ) >= 2:
-			# print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
+			## print( "KEYWORD:", match.group(1), " VALUE:", match.group(2) )
 			global CONFDIR
 			CONFDIR = match.group(2)
-			print match.group(1), CONFDIR
+			## print( match.group(1), CONFDIR )
+			debugMessage( match.group(1) + " set to " + CONFDIR, 1 );
 			continue
-		match = re.search('(--log)-?(?:file)*[=:](.+)', oneWord)
+
+		##
+		## Check for --log --log-file --logfile
+		match = re.search('(--log(?:-?file)?)[=:](.+)', oneWord)
 		if match and len(match.groups() ) >= 2:
-			#print "KEYWORD:", match.group(1), " VALUE:", match.group(2)
+			## print( "KEYWORD:", match.group(1), " VALUE:", match.group(2) )
 			global logFile
 			logFile = match.group(2)
-			print match.group(1), logFile
+			## print( match.group(1), logFile )
+			debugMessage( match.group(1) + " set to " + logFile, 1 )
 			continue
+
+		##
+		## Check for --port
+		match = re.search('(--port)[=:](.+)', oneWord)
+		if match and len(match.groups() ) >= 2:
+			## print( "port KEYWORD:", match.group(1), " VALUE:", match.group(2) )
+			global IP_PORT
+			IP_PORT = int(match.group(2))
+			## print( match.group(1), IP_PORT )
+			debugMessage( match.group(1) + " set to " + str(IP_PORT), 1 )
+			continue
+
+		##
+		## Catch unknown args:
 		if match == None:
-			print "\nWARNING: Unrecognized argument: ", oneWord
+			print( "\nWARNING: Unrecognized argument: ", str(oneWord) )
 			raise SystemExit
 
 
-## Parse command line arguments if given (argv[0] is script name):
+
+
+
+
+
+## #######################################################
+## Parse command line arguments if supplied (argv[0] is script name):
+##
 if (len(argv) > 1):
 	args = argv[1:]
-	## print "ARGS: %r,  len ARGS: %d" % (args, len(args))
+	## print( "ARGS: %r,  len ARGS: %d" % (args, len(args)) )
+	##
+	## Skip script name (argv[0]) when parsing:
 	parseArgs( argv[1:] )
 
 
-
-## Compose location of the list of NXDOMAINs from user-overridable options:
+## Compose location of the list of NXDOMAINs from user-overridable options,
+## stripping extra directory separators while doing so:
 NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
 
 
@@ -113,7 +246,7 @@ NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
 
 
 ## #######################################################
-
+##
 def loadNXDOMAINfile():
 	"""
 	Load the file of domains to "black-hole", i.e. give not-found
@@ -129,7 +262,7 @@ def loadNXDOMAINfile():
 		NXDOMAINfileTimestamp = stat(NXDOMAINfile).st_mtime
 		NXDOMAINs = open(NXDOMAINfile, 'r').read().splitlines()
 	except:
-		print "ERROR:", exc_info()[1]
+		print( "ERROR:", exc_info()[1] )
 		raise SystemExit
 
 
@@ -141,8 +274,6 @@ def loadNXDOMAINfile():
 	while index < len(NXDOMAINs):
 		NXDOMAINs[index] = re.sub('[\t ]*#+.*$','', \
 			NXDOMAINs[index] ).lower()
-#		if index < 10:
-#			print "%03d \"%s\"" % (index+1, NXDOMAINs[index] )
 		if NXDOMAINs[index][0:1] == 'X'  or  len(NXDOMAINs[index]) == 0:
 			# print "%03d \"%s\"  DELETING..." % (index+1, NXDOMAINs[index] )
 			del NXDOMAINs[index]
@@ -154,75 +285,25 @@ def loadNXDOMAINfile():
 loadNXDOMAINfile()
 
 
-## Open log file
-try:
-	logFH = open(logFile, 'ab')	## append, binary (unlikely useful)
-	print "Opened log file %s" % logFile
-except:
-	print "ERROR:", exc_info()[1]
-	raise SystemExit
-
-
-## raise SystemExit
-
-
-
-
-
 
 
 
 
 ## #######################################################
-
-## A logging utility for debugging messages. NOT for logging
-## queries to a log file.
+## Open log file
 ##
-## This requires some disambiguation...
-##
-## Accepts 2 forms of parameters; mutually exclusive:
-##
-## debugMessage('A message', 4)
-## or
-## debugMessage(msg='A message', verb=4)
-## 
-## The second format is handy when expanding functionality at
-## later date.
-##
-## Note that both methods do not work in same invocation
-##
-## Logging default level is 2 (4 is a lot, 0 is nearly nothing):
-## See verbosityGlobal variable above for its initialization.
-
-##def debugMessage(message, *positional_parameters, **keyword_parameters):
-def debugMessage(msgBare = None, verbBare = None, **keywords):
-	"""
-	All logging in central location, with customizable
-	verbosity setting (via --debug=[0-4] as startup argument.
-	"""
-	verbosityLocal = None
-	global verbosityGlobal
+try:
+	## logFH = open(logFile, 'ab')	## append, binary (unlikely useful)
+	logFH = open(logFile, 'a')	## append
+	## print( "Opened log file %s" % logFile )
+	debugMessage( "Opened log file %s" % logFile, 1 )
+except:
+	print( "ERROR:", exc_info()[1] )
+	raise SystemExit
 
 
-	if ('msg' in keywords):
-		msg = keywords['msg']
-		# print 'MESSAGE: ', msg
-	elif (msgBare == None):
-		print 'NO MESSAGE...'
-		return
-	else:
-		msg = msgBare
+## raise SystemExit
 
-	if ('verb' in keywords):
-		verbosityLocal = keywords['verb']
-		# print 'VERB: ', verbosityLocal
-	elif (verbBare == None):
-		verbosityLocal = verbosityGlobal
-	else:
-		verbosityLocal = verbBare
-
-	if verbosityLocal <= verbosityGlobal:
-		print "(*) %s" % msg
 
 
 
@@ -316,13 +397,11 @@ class ClientThread(Thread):
 
 		## This goes to log file:
 
-#		logFH.writelines( time.strftime('%Y-%m-%d %H:%M:%S', \
-#			time.localtime() ), client_ip, query_domain, nxdomainFound )
-#		print >> logFile (time.strftime('%Y-%m-%d %H:%M:%S', \
-#			time.localtime() ), client_ip, query_domain, nxdomainFound )
-		print >> logFH, time.strftime('%Y-%m-%d %H:%M:%S', \
-			time.localtime() ), client_ip, query_domain, nxdomainFound
-
+##		print >> logFH, time.strftime('%Y-%m-%d %H:%M:%S', \
+##			time.localtime() ), client_ip, query_domain, nxdomainFound
+		print( time.strftime('%Y-%m-%d %H:%M:%S', time.localtime() ),
+			query_domain, nxdomainFound, file=logFH
+			)
 		logFH.flush()
 
 
@@ -441,8 +520,8 @@ class DNSquery:
 			## extract a name part:
 			self.QNames.append( \
 				self.questionName[offsetNamePart:lenNamePart] )
-#			print "NAME PART #", kounterNameParts, 
-#			print " from: ", offsetNamePart, " to: ", lenNamePart, 
+#			print "NAME PART #", kounterNameParts,
+#			print " from: ", offsetNamePart, " to: ", lenNamePart,
 			debugMessage(msg= "QNAMES is: " + str(self.QNames ), verb=3)
 			offsetNamePart = lenNamePart
 			lenNamePart += 1
@@ -579,18 +658,22 @@ class DNSquery:
 			verb=3)
 
 	def REFUSED(self):
-		print "CLASS: REFUSED before:", self.query_byte_4, \
+		print( "CLASS: REFUSED before:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
+			)
 		self.query_byte_4 = self.query_byte_4 | 5
-		print "CLASS: REFUSED after:", self.query_byte_4, \
+		print( "CLASS: REFUSED after:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
+			)
 
 	def NXRRSET(self):
-		print "CLASS: NXRRSET before:", self.query_byte_4, \
+		print( "CLASS: NXRRSET before:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
+			)
 		self.query_byte_4 = self.query_byte_4 | 8
-		print "CLASS: NXRRSET after:", self.query_byte_4, \
+		print( "CLASS: NXRRSET after:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
+			)
 
 	def NOTAUTH(self):
 		debugMessage(msg=format(
@@ -604,11 +687,13 @@ class DNSquery:
 			verb=3)
 
 	def NOTZONE(self):
-		print "CLASS: NOTZONE before:", self.query_byte_4, \
+		print( "CLASS: NOTZONE before:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
+			)
 		self.query_byte_4 = self.query_byte_4 | 10
-		print "CLASS: NOTZONE after:", self.query_byte_4, \
+		print( "CLASS: NOTZONE after:", self.query_byte_4, \
 			" binary: ", format(self.query_byte_4, '08b')
+			)
 
 
 
@@ -681,11 +766,11 @@ class DNSquery:
 			## ALSO, preceding all that is 2-byte Preference value 
 			## which must be included in field length indicator
 			returnString += str(pack("!H", len('.'.join(QNames)) + 2 + 2 ) )
-			print "QType == MX, adding fields to RR:", repr(QType)
+			print( "QType == MX, adding fields to RR:", repr(QType) )
 			returnString += pack('!H', 1)  ## Arbitrary Preference value = 1
 			for oneName in QNames:
 				lenName = len(oneName)
-				print "One NAME: %s  and length: %d" % (oneName, lenName)
+				print( "One NAME: %s  and length: %d" % (oneName, lenName) )
 				returnString += pack("!B", lenName)
 				returnString += oneName
 			returnString += pack("!B", 0)
@@ -722,9 +807,9 @@ class DNSquery:
 
 
 	def setTTL(self, newTTL):
-		print "CLASS: setTTL before:", self.QTTL,
+		print( "CLASS: setTTL before:", self.QTTL,)
 		self.QTTL = newTTL
-		print "CLASS: setTTL after:", self.QTTL
+		print( "CLASS: setTTL after:", self.QTTL )
 
 
 
@@ -736,20 +821,35 @@ class DNSquery:
 
 
 ## #######################################################
-
+## Bind to socket
+## #######################################################
 try:
 	s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	s.bind(( IP_ADDR, IP_PORT))
 	debugMessage(format("Bound to IP :: port --> %s :: %s " \
 		% (IP_ADDR, IP_PORT) ), \
 		verb=0);
-	print >> logFH, time.strftime('%Y-%m-%d %H:%M:%S'), \
-		"STARTED LISTENING"
+
 except:
-	print "\nERROR binding to socket at %s :: %d:\n\t%s" \
+	print( "\nERROR binding to socket at %s :: %d:\n\t%s" \
 		% (IP_ADDR, IP_PORT, exc_info()[1] )
+		)
 	raise SystemExit
 
+
+## #######################################################
+## Log start time to log file
+## #######################################################
+try:
+	## print >> logFH, time.strftime('%Y-%m-%d %H:%M:%S'), \
+	##		"STARTED LISTENING"
+	print( time.strftime('%Y-%m-%d %H:%M:%S'), "STARTED LISTENING",
+		file=logFH
+		)
+
+except:
+	print( "\nERROR writing to log file: ", logFH)
+	raise SystemExit
 
 
 
