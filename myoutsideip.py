@@ -40,19 +40,25 @@ import time
 
 
 ## IP_ADDR = '0.0.0.0'
-## IP_PORT = 53
 IP_ADDR = '127.0.0.1'		## for localhost testing
+## Port can be changed with --port switch
 IP_PORT = 53535			## for localhost testing
+## IP_PORT = 53
 
 
 BUFFER_SIZE = 512
 
 ## CONFDIR = '/etc/BlackHoleDNS'
 CONFDIR = '.'
-verbosityGlobal = 2
+## Output verbosity level
+## Can change with --debug:[0-4]
+verbosityGlobal = 4
+## For future feature - reloading config file when it changes
 NXDOMAINfileTimestamp = 0
-## change log file default name to something sane, please?
+## Change log file default name to something sane, please?
+## Can change with --config switch
 logFile = '/var/log/dns-blackhole.log'
+logFile = './dns-blackhole.log'
 
 
 
@@ -110,7 +116,7 @@ def debugMessage(msgBare = None, verbBare = None, **keywords):
 		msg = keywords['msg']
 		## print( 'MESSAGE: ', msg )
 	elif (msgBare == None):
-		print( 'NO MESSAGE...' )
+		print( 'debugMessage() received NO MESSAGE...' )
 		return
 	else:
 		msg = msgBare
@@ -122,11 +128,6 @@ def debugMessage(msgBare = None, verbBare = None, **keywords):
 		verbosityLocal = verbosityGlobal
 	else:
 		verbosityLocal = verbBare
-
-	## print( "verbosityLocal: {}  and verbosityGlobal: {}".format(
-	##	verbosityLocal,
-	##	verbosityGlobal
-	##	))
 
 
 	## This invocation may use a debug level (verb=N) different than the
@@ -177,7 +178,7 @@ def parseArgs(keywords):
 			global verbosityGlobal
 			verbosityGlobal = int(match.group(2) )
 			## print( match.group(1), verbosityGlobal )
-			debugMessage( match.group(1) + " set to " + str(verbosityGlobal), 1 )
+			debugMessage( f"{match.group(1)} set to {str(verbosityGlobal)}", 1 )
 			continue
 
 		##
@@ -188,7 +189,7 @@ def parseArgs(keywords):
 			global CONFDIR
 			CONFDIR = match.group(2)
 			## print( match.group(1), CONFDIR )
-			debugMessage( match.group(1) + " set to " + CONFDIR, 1 );
+			debugMessage( f"{match.group(1)} set to {CONFDIR}", 1 );
 			continue
 
 		##
@@ -199,7 +200,7 @@ def parseArgs(keywords):
 			global logFile
 			logFile = match.group(2)
 			## print( match.group(1), logFile )
-			debugMessage( match.group(1) + " set to " + logFile, 1 )
+			debugMessage( f"{match.group(1)} set to {logFile}", 1 )
 			continue
 
 		##
@@ -210,7 +211,7 @@ def parseArgs(keywords):
 			global IP_PORT
 			IP_PORT = int(match.group(2))
 			## print( match.group(1), IP_PORT )
-			debugMessage( match.group(1) + " set to " + str(IP_PORT), 1 )
+			debugMessage( f"{match.group(1)} set to {str(IP_PORT)}", 1 )
 			continue
 
 		##
@@ -236,6 +237,8 @@ if (len(argv) > 1):
 	parseArgs( argv[1:] )
 
 
+
+
 ## Compose location of the list of NXDOMAINs from user-overridable options,
 ## stripping extra directory separators while doing so:
 NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
@@ -255,7 +258,7 @@ def loadNXDOMAINfile():
 	global NXDOMAINs
 	global NXDOMAINfile
 
-	## Get the timestamp of that file, may check it for changes and
+	## Get the timestamp of that file, maybe in future check it for changes and
 	## auto-reload it:
 	try:
 		global NXDOMAINfileTimestamp
@@ -268,18 +271,24 @@ def loadNXDOMAINfile():
 
 	## Remove comments:
 	## print "LEN NXDOMAINs:", len(NXDOMAINs)
-
+	##
 	index = 0
-
+	kounter = 0
+	##
 	while index < len(NXDOMAINs):
 		NXDOMAINs[index] = re.sub('[\t ]*#+.*$','', \
 			NXDOMAINs[index] ).lower()
-		if NXDOMAINs[index][0:1] == 'X'  or  len(NXDOMAINs[index]) == 0:
-			# print "%03d \"%s\"  DELETING..." % (index+1, NXDOMAINs[index] )
+		if len(NXDOMAINs[index]) == 0:
+			kounter += 1
+			## print( "%03d \"%s\"  DELETING..." % (index+1, NXDOMAINs[index] ) )
 			del NXDOMAINs[index]
 		else:
 			index += 1
 	## print "LEN NXDOMAINs without comments:", len(NXDOMAINs)
+
+	if kounter > 0:
+		debugMessage( f"DELETED {kounter} comments from NXDOMAINfile", 4)
+
 
 
 loadNXDOMAINfile()
@@ -302,7 +311,6 @@ except:
 	raise SystemExit
 
 
-## raise SystemExit
 
 
 
@@ -328,7 +336,7 @@ class ClientThread(Thread):
 
 	def run(self):
 		## print "ClientThread()"
-		debugMessage(msg=format("Connection: client_ip: %s, %i bytes" 
+		debugMessage(msg=format("Connection: client_ip: %s, %i bytes"
 						% (client_ip, len(data) ) ) , verb=1)
 
 		debugMessage(msg="Received query data: " + repr(data), verb=4 )
@@ -341,14 +349,15 @@ class ClientThread(Thread):
 
 
 		query_domain = oneQuery.getQuestionNameCanonical().lower()
-		debugMessage( msg="Question is for: " + query_domain,
+		debugMessage( msg="Question is for: " + query_domain.decode(),
 			verb=1)
 
 		## Check for a black-holed domain name:
 		nxdomainFound = False
 		for domain in NXDOMAINs:
-			## print "DOMAIN being tested:", domain
-			if query_domain.endswith(domain ):
+##			debugMessage( f"NXDOMAIN being tested for match: {domain}", 4 )
+##			debugMessage( f"query_domain being tested: {query_domain.decode()}", 4 )
+			if query_domain.decode().endswith( domain ):
 				debugMessage( msg='NXDOMAIN match: ' + domain, verb=2)
 				oneQuery.NXDOMAIN()
 				oneQuery.subAnswer()
@@ -361,8 +370,12 @@ class ClientThread(Thread):
 		possibly-valid but unknown domains get SERVFAIL,
 		 i.e. "don't know"
 		"""
+		debugMessage( f"nxdomainFound: {nxdomainFound}", 4)
+		debugMessage( f"Query for my.ip 5 byte location:"
+			+ f" {query_domain[0:5].decode()}", 4)
 		if not nxdomainFound:
-			if query_domain[0:5] == 'my.ip':
+			if query_domain[0:5].decode() == 'my.ip':
+				debugMessage(f"Found my.ip query", 4)
 				## True when looking for WAN-side IP via:
 				## dig my.ip @[this-server]
 				## Replicates dig my.ip @outsideip.net
@@ -387,9 +400,22 @@ class ClientThread(Thread):
 		debugMessage(msg=format("oneQuery.ResourceRec: %r"
 			% oneQuery.ResourceRec), verb=4)
 
-		retval = oneQuery.getHeader() \
-		+ oneQuery.questionName \
-		+ ''.join(oneQuery.ResourceRec)  \
+
+		print( f"> type(oneQuery.getHeader) {type(oneQuery.getHeader())}",
+			oneQuery.getHeader()
+			)
+		print( f"> type(oneQuery.questionName) {type(oneQuery.questionName)}")
+		print( f"> type(oneQuery.ResourceRec) {type(oneQuery.ResourceRec)}")
+
+
+		retval = oneQuery.getHeader()
+		retval += oneQuery.questionName
+		## retval += bytes(''.join(str(item) for item in oneQuery.ResourceRec), 'utf-8')
+		for item in oneQuery.ResourceRec:
+			retval += item
+
+		print( f"type(retval) = {type(retval)}\n RETVAL:\n",
+			retval )
 
 
 		s.sendto(retval, (client_ip, client_port)) # client_ip_port)
@@ -403,6 +429,10 @@ class ClientThread(Thread):
 			query_domain, nxdomainFound, file=logFH
 			)
 		logFH.flush()
+		debugMessage( f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime() )} "
+			+ f"query_domain:{query_domain.decode()} "
+			+ f"NXDOMAIN:{nxdomainFound}", 4
+			)
 
 
 
@@ -522,7 +552,9 @@ class DNSquery:
 				self.questionName[offsetNamePart:lenNamePart] )
 #			print "NAME PART #", kounterNameParts,
 #			print " from: ", offsetNamePart, " to: ", lenNamePart,
-			debugMessage(msg= "QNAMES is: " + str(self.QNames ), verb=3)
+##			debugMessage(msg= "QNAMES is: " + self.QNames, verb=3)
+			debugMessage(msg= "QNAMES is: "
+				+ '.'.join( element.decode() for element in self.QNames), verb=3)
 			offsetNamePart = lenNamePart
 			lenNamePart += 1
 
@@ -536,7 +568,7 @@ class DNSquery:
 		offsetNamePart += 2
 		lenNamePart += 2
 		self.QClass = self.questionName[offsetNamePart:lenNamePart]
-		debugMessage(msg="QType (A vs MX): " 
+		debugMessage(msg="QType (A vs MX): "
 			 + self.qtypeCodes[ unpack('!H', self.QType)[0]]
 			 + " (code %d)" % unpack('!H', self.QType)[0]
 			 , verb=2)
@@ -557,7 +589,8 @@ class DNSquery:
 		Return human-readable "question name" (domain) for logging, etc.
 		The binary lengths stripped, separators of "." added.
 		"""
-		return ".".join(self.QNames)
+		## print( self.QNames)
+		return b".".join(self.QNames)
 
 #	def getQNames(self):
 #		debugMessage(msg=format("getQNames() returning: %r" % self.QNames),
@@ -716,8 +749,8 @@ class DNSquery:
 			, self.auth_rec_count \
 			, self.addl_rec_count \
 			)
-		# print "Length header: ", len(xyz)
-
+		print( f"Length header: {len(xyz)} header:", xyz )
+		print( f"self.query_id: {self.query_id}")
 		return xyz
 
 
@@ -744,13 +777,13 @@ class DNSquery:
 				)
 			QType = pack('!H', 1) ## i.e. 16 aka TXT
 
-		returnString = ''
+		returnString = b''
 
 		for oneName in QNames:
 			lenName = len(oneName)
 			debugMessage(msg=format("One NAME: %s  and length: %d" \
 				% (oneName, lenName)), verb=3)
-			returnString += pack("!B", lenName)
+			returnString += pack("!B", len(oneName))
 			returnString += oneName
 		## Finish off name with NULL byte:
 		returnString += pack("!B", 0)
@@ -783,10 +816,12 @@ class DNSquery:
 
 			## Multiple strings allowed in answers:
 			if (type(QAnswer) == list):
-				returnString += str(pack("!H", len(' '.join(QAnswer) ) +1) )
+##				returnString += str(pack("!H", len(' '.join(QAnswer) ) +1) )
+				returnString += pack("!H", len(' '.join(QAnswer) ) +1)
 				for oneAnswer in QAnswer:
-					returnString += str(pack("!B", len(oneAnswer)))
-					returnString += oneAnswer
+					returnString += pack("!B", len(oneAnswer))
+					print( f"type(oneAnswer) == {type(oneAnswer)} & oneAnswer:{oneAnswer}" )
+					returnString += bytes(oneAnswer, "ascii")
 			else:	## assume type(QAnswer) = string
 					## (TODO test whether valid)
 				returnString += str(pack("!H", len(QAnswer) +1) )
@@ -796,7 +831,7 @@ class DNSquery:
 		## "A" type record, 2-byte length prefix:
 			returnString += pack("!H", 4)
 			for octet in QAnswer.split('.'):
-	#			print "OCTET:", octet
+				print( f"OCTET: {octet}" )
 				returnString += pack("!B", int(octet) )
 
 		debugMessage(msg=format(
