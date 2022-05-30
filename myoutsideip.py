@@ -670,26 +670,32 @@ class DNSquery:
 
 
 	def SERVFAIL(self):
+		## SERVFAIL means "unknown" and clients should try a secondary server:
 		debugMessage(msg=format(
-			"SERVFAIL() before toggle: %d  binary: %s"
+			"SERVFAIL() byte 4 before toggle: %d  binary: %s"
 			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
 			verb=3)
 		self.query_byte_4 = self.query_byte_4 | 2
 		debugMessage(msg=format(
-			"SERVFAIL() after  toggle: %d  binary: %s"
+			"SERVFAIL() byte 4 after  toggle: %d  binary: %s"
 			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
 			verb=3)
 
+
 	def NXDOMAIN(self):
+		## NXDOMAIN means "known not to exist" and clients should not
+		## try a secondary server
+		## This is used for malware / ad servers
 		debugMessage(msg=format(
-			"NXDOMAIN() before toggle: %d  binary: %s"
+			"NXDOMAIN() byte 4 before toggle: %d  binary: %s"
 			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
 			verb=3)
 		self.query_byte_4 = self.query_byte_4 | 3
 		debugMessage(msg=format(
-			"NXDOMAIN() after  toggle: %d  binary: %s"
+			"NXDOMAIN() byte 4 after  toggle: %d  binary: %s"
 			% (self.query_byte_4, format(self.query_byte_4, '08b'))),
 			verb=3)
+
 
 	def REFUSED(self):
 		print( "CLASS: REFUSED before:", self.query_byte_4, \
@@ -742,37 +748,42 @@ class DNSquery:
 			))'''
 
 	def getHeader(self):
-		xyz = pack( "!HBBHHHH", self.query_id \
-			, self.query_byte_3 \
-			, self.query_byte_4 \
-			, self.question_count \
-			, self.answer_count \
-			, self.auth_rec_count \
-			, self.addl_rec_count \
+		header = pack( "!HBBHHHH",
+			self.query_id,
+			self.query_byte_3,
+			self.query_byte_4,
+			self.question_count,
+			self.answer_count,
+			self.auth_rec_count,
+			self.addl_rec_count,
 			)
-		print( f"Length header: {len(xyz)} header:", xyz )
-		print( f"self.query_id: {self.query_id}")
-		return xyz
+		debugMessage( f"getHeader() length: {len(header)} header: {header}", 4 )
+		return header
 
 
 
 	def createResourceRecord( self, QNames, QType, QClass, QTTL, QAnswer):
-	#		print "createResourceRecord! ==========================="
-	#		print "Qnames:", QNames
-		debugMessage(msg=format("QType: %r QClass: %r" \
-			% (QType, QClass)), verb=3)
-		debugMessage(msg=format( "QAnswer: %r" % QAnswer), verb=3)
+		## Resource Record is an answer record
+		debugMessage( f"QType: {QType} and QClass: {QClass}", 3)
+#		debugMessage(msg=format("QType: %r QClass: %r" \
+#			% (QType, QClass)), verb=3)
+#		debugMessage(msg=format( "QAnswer: %r" % QAnswer), verb=3)
+		debugMessage( f"QAnswer: {QAnswer}", 3)
 
-		## ANY Query type is handled specially:
+		## Query type ANY is handled specially:
 		## Instead return an "Additional" "TXT" record FIRST
+		## NOTE: NOW CONNECTION REFUSED WHEN -t any IS USED?!?
+		## NOTE: NOW CONNECTION REFUSED WHEN -t any IS USED?!?
+		## NOTE: NOW CONNECTION REFUSED WHEN -t any IS USED?!?
+		## NOTHING IN LOG
 		if unpack('!H', QType)[0] == 255:
 			## QAnswer += '     Type ANY not supported   ' \
 			##	+"'See draft-ietf-dnsop-refuse-any'"
-			oneQuery.ResourceRec.append( \
-				createResourceRecord( \
-					QNames, pack('!H', 16), \
-						QClass, \
-					QTTL, \
+			oneQuery.ResourceRec.append(
+				createResourceRecord(
+					QNames, pack('!H', 16),
+					QClass,
+					QTTL,
 					'Type ANY not supported   See draft-ietf-dnsop-refuse-any'
 					)
 				)
@@ -782,38 +793,56 @@ class DNSquery:
 
 		for oneName in QNames:
 			lenName = len(oneName)
-			debugMessage(msg=format("One NAME: %s  and length: %d" \
-				% (oneName, lenName)), verb=3)
+#			debugMessage(msg=format("One NAME: %s  and length: %d" \
+#				% (oneName, lenName)), verb=3)
+			debugMessage( f"QNames' oneName: {oneName} and length: {len(oneName)}",
+				3)
 			returnString += pack("!B", len(oneName))
 			returnString += oneName
+
 		## Finish off name with NULL byte:
 		returnString += pack("!B", 0)
 		## Followed by Type (MX), Class (IN), and TTL:
 		returnString += QType + QClass
 		returnString += pack("!i", QTTL)
 
+		## MX records
+		## MX records
+		## MX records
 		## MX records get a 2-byte Preference value first:
 		if unpack('!H', QType)[0] == 15:
 			## Answer is NOT 4 octets of IP address but domain name in
 			## STD DNS NAME format, with length bytes preceding each
 			## portion, and trailing NULL byte.
-			## ALSO, preceding all that is 2-byte Preference value 
+			## ALSO, preceding all that is 2-byte Preference value
 			## which must be included in field length indicator
-			returnString += str(pack("!H", len('.'.join(QNames)) + 2 + 2 ) )
-			print( "QType == MX, adding fields to RR:", repr(QType) )
+
+			## returnString += pack("!H", len('.'.join(QNames)) + 2 + 2 )
+			tempVal = b''
+			for item in QNames:
+				tempVal += b'.' + item
+			returnString += pack("!H", len(tempVal) + 2 + 2 )
+
+			debugMessage( f"QType == MX, adding fields to RR: {repr(QType)}", 3 )
 			returnString += pack('!H', 1)  ## Arbitrary Preference value = 1
 			for oneName in QNames:
 				lenName = len(oneName)
-				print( "One NAME: %s  and length: %d" % (oneName, lenName) )
+
+				debugMessage( f"QNames' oneName: {oneName} and length: {len(oneName)}",
+					4)
+				## Return value gets (binary) length of following value:
 				returnString += pack("!B", lenName)
 				returnString += oneName
+			## Finish return value with NULL:
 			returnString += pack("!B", 0)
 
+
+		## TXT records:
+		## TXT records:
 		## TXT records:
 		elif unpack('!H', QType)[0] == 16: #  or  unpack('!H', QType)[0] == 255:
-			debugMessage(msg=format("QType == TXT," \
-				+ " adding fields to RR: len: %d value: %s" \
-					% (len(QAnswer), QAnswer ) ), verb=4)
+			debugMessage( f"QType == TXT, adding fields to RR: "
+				+ f"{QAnswer}  length: {len(QAnswer)}", 3 )
 
 			## Multiple strings allowed in answers:
 			if (type(QAnswer) == list):
@@ -825,9 +854,9 @@ class DNSquery:
 					returnString += bytes(oneAnswer, "utf-8")
 			else:	## assume type(QAnswer) = string
 					## (TODO test whether valid)
-				returnString += str(pack("!H", len(QAnswer) +1) )
-				returnString += str(pack("!B", len(QAnswer) ) )
-				returnString += QAnswer
+				returnString += pack("!H", len(QAnswer) +1)
+				returnString += pack("!B", len(QAnswer) )
+				returnString += bytes(QAnswer, "utf-8")
 		else:
 		## "A" type record, 2-byte length prefix:
 			returnString += pack("!H", 4)
