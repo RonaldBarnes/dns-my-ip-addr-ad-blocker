@@ -764,11 +764,13 @@ class DNSquery:
 
 	def createResourceRecord( self, QNames, QType, QClass, QTTL, QAnswer):
 		## Resource Record is an answer record
-		debugMessage( f"QType: {QType} and QClass: {QClass}", 3)
-#		debugMessage(msg=format("QType: %r QClass: %r" \
-#			% (QType, QClass)), verb=3)
-#		debugMessage(msg=format( "QAnswer: %r" % QAnswer), verb=3)
-		debugMessage( f"QAnswer: {QAnswer}", 3)
+		debugMessage( "createResourceRecord() \n"
+			+ f"	QType: {QType}\n"
+			+ f"	QClass: {QClass}\n"
+			+ f"	QTTL: {QTTL}\n"
+			+ f"	QAnswer: {QAnswer}",
+			3)
+#		debugMessage( f"QAnswer: {QAnswer}", 3)
 
 		## Query type ANY is handled specially:
 		## Instead return an "Additional" "TXT" record FIRST
@@ -817,22 +819,28 @@ class DNSquery:
 			## ALSO, preceding all that is 2-byte Preference value
 			## which must be included in field length indicator
 
-			## returnString += pack("!H", len('.'.join(QNames)) + 2 + 2 )
-			tempVal = b''
-			for item in QNames:
-				tempVal += b'.' + item
-			returnString += pack("!H", len(tempVal) + 2 + 2 )
+			## Join together all parts of question's "names" i.e. "my" and "ip":
+			tempVal = ".".join(item.decode() for item in QNames)
+			## Adding 2 + 2 suffix: is that because len(my) = 2 and len(ip) = 2?
+			## Probably - if an NXDOMAIN record, this branch never executes.
+			## And, this script is not a real DNS lookup tool, so "my.ip" is the
+			## only way to get here.
+			## HOWEVER, let's make it extensible
+			## returnString += pack("!H", len(tempVal) + 2 + 2)
+			returnString += pack("!H", len(tempVal)
+				+ len("".join( item.decode() for item in QNames) )
+				)
 
 			debugMessage( f"QType == MX, adding fields to RR: {repr(QType)}", 3 )
+
 			returnString += pack('!H', 1)  ## Arbitrary Preference value = 1
 			for oneName in QNames:
-				lenName = len(oneName)
-
-				debugMessage( f"QNames' oneName: {oneName} and length: {len(oneName)}",
+				debugMessage( f"MX QNames' oneName: {oneName} length: {len(oneName)}",
 					4)
 				## Return value gets (binary) length of following value:
-				returnString += pack("!B", lenName)
+				returnString += pack("!B", len(oneName))
 				returnString += oneName
+
 			## Finish return value with NULL:
 			returnString += pack("!B", 0)
 
@@ -840,7 +848,7 @@ class DNSquery:
 		## TXT records:
 		## TXT records:
 		## TXT records:
-		elif unpack('!H', QType)[0] == 16: #  or  unpack('!H', QType)[0] == 255:
+		elif unpack('!H', QType)[0] == 16:
 			debugMessage( f"QType == TXT, adding fields to RR: "
 				+ f"{QAnswer}  length: {len(QAnswer)}", 3 )
 
