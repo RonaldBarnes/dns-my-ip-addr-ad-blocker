@@ -858,7 +858,9 @@ class DNSquery:
 				returnString += pack("!H", len(' '.join(QAnswer) ) +1)
 				for oneAnswer in QAnswer:
 					returnString += pack("!B", len(oneAnswer))
-					print( f"type(oneAnswer) == {type(oneAnswer)} & oneAnswer:{oneAnswer}" )
+					debugMessage( f"type(oneAnswer) == {type(oneAnswer)} & "
+						+ f"oneAnswer:{oneAnswer}",
+						4 )
 					returnString += bytes(oneAnswer, "utf-8")
 			else:	## assume type(QAnswer) = string
 					## (TODO test whether valid)
@@ -869,20 +871,20 @@ class DNSquery:
 		## "A" type record, 2-byte length prefix:
 			returnString += pack("!H", 4)
 			for octet in QAnswer.split('.'):
-				print( f"OCTET: {octet}" )
+				debugMessage( f"OCTET: {octet}", 4 )
 				returnString += pack("!B", int(octet) )
 
 		debugMessage(msg=format(
-			"RESOURCE RECORD RETURN len: %d  and VALUE: %s" \
+			"RESOURCE RECORD RETURN len: %d  and VALUE:\n   > %s" \
 			% (len(returnString), repr(returnString))
 			), verb=4)
 		return returnString
 
 
 	def setTTL(self, newTTL):
-		print( "CLASS: setTTL before:", self.QTTL,)
+		debugMessage( f"CLASS: setTTL before: {self.QTTL}", 4)
 		self.QTTL = newTTL
-		print( "CLASS: setTTL after:", self.QTTL )
+		debugMessage( f"CLASS: setTTL after:: {self.QTTL}", 4)
 
 
 
