@@ -327,6 +327,7 @@ class ClientThread(Thread):
 			+ f"[+] New thread started for {ip}:{str(port)}",
 			verb=2)
 
+
 	def run(self):
 		debugMessage(f"Connection: client IP:{client_ip} "
 			+ f"sent {len(data)} bytes", 2)
@@ -373,6 +374,25 @@ class ClientThread(Thread):
 					oneQuery.createResourceRecord(oneQuery.QNames,
 					oneQuery.QType, oneQuery.QClass, 0, client_ip))
 				oneQuery.addAnswer()
+
+
+				## Is a type MX request query?
+				if unpack("!H", oneQuery.QType)[0] == 15:
+					## Add an Additional TXT record with user's IP, since MX records
+					## must return host name in DNS format, i.e. "my.ip."
+					oneQuery.ResourceRec.append(
+						oneQuery.createResourceRecord("",
+							pack('!H', 16),
+							oneQuery.QClass,
+							86400,
+							[
+								f"Your IP address: {client_ip}"
+								## ,
+								## f"Type MX on query for 'my.ip' makes no sense."
+							]
+							)
+						)
+					oneQuery.addAdditional()
 
 				## Add a boastful TXT RR, because why not?
 				oneQuery.ResourceRec.append(
@@ -778,6 +798,9 @@ class DNSquery:
 		## NOTE: NOW CONNECTION REFUSED WHEN -t any IS USED?!?
 		## NOTE: NOW CONNECTION REFUSED WHEN -t any IS USED?!?
 		## NOTHING IN LOG
+		## Same when dig -t any @8.8.8.8 ... or @1.1.1.1
+		##
+		## unpack returns a tuple, we want first value, aka [0];
 		if unpack('!H', QType)[0] == 255:
 			## QAnswer += '     Type ANY not supported   ' \
 			##	+"'See draft-ietf-dnsop-refuse-any'"
@@ -812,6 +835,8 @@ class DNSquery:
 		## MX records
 		## MX records
 		## MX records get a 2-byte Preference value first:
+		##
+		## unpack returns a tuple, we want first value, aka [0];
 		if unpack('!H', QType)[0] == 15:
 			## Answer is NOT 4 octets of IP address but domain name in
 			## STD DNS NAME format, with length bytes preceding each
@@ -848,13 +873,14 @@ class DNSquery:
 		## TXT records:
 		## TXT records:
 		## TXT records:
+		##
+		## unpack returns a tuple, we want first value, aka [0];
 		elif unpack('!H', QType)[0] == 16:
 			debugMessage( f"QType == TXT, adding fields to RR: "
 				+ f"{QAnswer}  length: {len(QAnswer)}", 3 )
 
 			## Multiple strings allowed in answers:
 			if (type(QAnswer) == list):
-##				returnString += str(pack("!H", len(' '.join(QAnswer) ) +1) )
 				returnString += pack("!H", len(' '.join(QAnswer) ) +1)
 				for oneAnswer in QAnswer:
 					returnString += pack("!B", len(oneAnswer))
@@ -867,8 +893,13 @@ class DNSquery:
 				returnString += pack("!H", len(QAnswer) +1)
 				returnString += pack("!B", len(QAnswer) )
 				returnString += bytes(QAnswer, "utf-8")
+
+
+		## "A" type record, default query type:
+		## "A" type record, default query type:
+		## "A" type record, default query type:
 		else:
-		## "A" type record, 2-byte length prefix:
+			## "A" type record, 2-byte length prefix:
 			returnString += pack("!H", 4)
 			for octet in QAnswer.split('.'):
 				debugMessage( f"OCTET: {octet}", 4 )
@@ -881,6 +912,12 @@ class DNSquery:
 		return returnString
 
 
+
+
+
+	## #######################################################
+	## set Time To Live
+	##
 	def setTTL(self, newTTL):
 		debugMessage( f"CLASS: setTTL before: {self.QTTL}", 4)
 		self.QTTL = newTTL
