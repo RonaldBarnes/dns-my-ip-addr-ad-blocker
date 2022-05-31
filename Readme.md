@@ -12,7 +12,13 @@ It replaces the functionality found in a Slashdot user's signature for
 finding out a network's WAN IP address via dig, now that the site
 disappeared:
 
-`dig my.ip @myoutsideip.net`
+#### Usage
+
+`dig -p 53535 my.ip @ronaldbarnes.ca`
+`dig -p 53535 +short -t txt my.ip @ronaldbarnes.ca`
+`dig -p 53535 +nocomments +nostats -t txt my.ip @ronaldbarnes.ca`
+`dig -p 53535 -t mx my.ip @ronaldbarnes.ca`
+`dig -p 53535 doubleclick.net @ronaldbarnes.ca`
 
 
 Extra functionality: block some ad servers and tracking sites. Add desired

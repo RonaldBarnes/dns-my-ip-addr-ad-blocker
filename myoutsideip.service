@@ -11,7 +11,7 @@ After=network.target
 # Type=oneshot
 Type=simple
 
-ExecStart=/usr/bin/python /home/uid1/Projects/myoutsideip/myoutsideip.py --config-dir=/home/uid1/Projects/myoutsideip --debug=2
+ExecStart=/usr/bin/python /home/uid1/Projects/myoutsideip/myoutsideip.py --config-dir=/home/uid1/Projects/myoutsideip --debug=2 --port=53535
 
 # Restart=always
 Restart=on-failure
