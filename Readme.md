@@ -13,13 +13,13 @@ finding out a network's WAN IP address via dig, now that the site
 disappeared:
 
 #### Usage
-
-`dig -p 53535 my.ip @ronaldbarnes.ca`
-`dig -p 53535 +short -t txt my.ip @ronaldbarnes.ca`
-`dig -p 53535 +nocomments +nostats -t txt my.ip @ronaldbarnes.ca`
-`dig -p 53535 -t mx my.ip @ronaldbarnes.ca`
-`dig -p 53535 doubleclick.net @ronaldbarnes.ca`
-
+```
+dig -p 53535 my.ip @ronaldbarnes.ca
+dig -p 53535 +short -t txt my.ip @ronaldbarnes.ca
+dig -p 53535 +nocomments +nostats -t txt my.ip @ronaldbarnes.ca
+dig -p 53535 -t mx my.ip @ronaldbarnes.ca
+dig -p 53535 doubleclick.net @ronaldbarnes.ca
+```
 
 Extra functionality: block some ad servers and tracking sites. Add desired
 sites to NXDOMAIN.list, and, unlike a pi-hole, which returns 0.0.0.0 for
