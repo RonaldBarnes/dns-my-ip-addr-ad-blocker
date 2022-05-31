@@ -798,7 +798,10 @@ class DNSquery:
 		## NOTE: NOW CONNECTION REFUSED WHEN -t any IS USED?!?
 		## NOTE: NOW CONNECTION REFUSED WHEN -t any IS USED?!?
 		## NOTHING IN LOG
-		## Same when dig -t any @8.8.8.8 ... or @1.1.1.1
+		## Works with dig -t any @8.8.8.8 ...
+		## But CloudFlare flags as Not IMPlemented dig -t any @1.1.1.1 ...
+		## [...]
+		## ;; ->>HEADER<<- opcode: QUERY, status: NOTIMP, id: 28326
 		##
 		## unpack returns a tuple, we want first value, aka [0];
 		if unpack('!H', QType)[0] == 255:
@@ -975,7 +978,9 @@ while(True):
 	## data = conn.recv(BUFFER_SIZE)
 	(data, (client_ip, client_port)) = s.recvfrom(BUFFER_SIZE)
 	## client_ip, client_port = (client_ip_port)
-	if not data: break
+	if not data:
+		debugMessage( f"No data sent from connection at {client_ip}", 3)
+		break
 	# data = data.rstrip('\r\n')
 	newthread = ClientThread(client_ip,client_port)
 	newthread.start()
