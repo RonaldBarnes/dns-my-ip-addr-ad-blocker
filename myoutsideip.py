@@ -46,13 +46,16 @@ import datetime as dt
 IP_ADDR = '0.0.0.0'
 ## IP_ADDR = '127.0.0.1'		## for localhost testing
 ## Port can be changed with --port switch
-IP_PORT = 53535			## for localhost testing
+##
+## bypass restrictions on incoming traffic on port 53, and
+## bypass existing DNS servers:
+IP_PORT = 53535
 ## IP_PORT = 53
 
 
 BUFFER_SIZE = 512
 
-## CONFDIR = '/etc/BlackHoleDNS'
+## CONFDIR = '/etc/myoutsideip'
 CONFDIR = '.'
 ## Output verbosity level
 ## Can change with --debug:[0-4]
@@ -60,9 +63,9 @@ verbosityGlobal = 2
 ## For future feature - reloading config file when it changes
 NXDOMAINfileTimestamp = 0
 ## Can change with --config switch
-logFile = '/var/log/dns-blackhole.log'
+logFile = '/var/log/myoutsideip.log'
 logFH = None
-## If log file hasn't been open, but messages need logging,
+## If log file hasn't been opened, but messages need logging,
 ## cache them here until file open:
 logCache = ""
 
@@ -79,8 +82,7 @@ logCache = ""
 
 ## #######################################################
 ##
-## A logging utility for debugging messages. NOT for logging
-## queries to a log file.
+## A logging utility for debugging messages.
 ##
 ## This requires some disambiguation...
 ##
@@ -147,7 +149,7 @@ def debugMessage(msgBare = None, verbBare = None, **keywords):
 	global logCache
 	if verbosityLocal <= verbosityGlobal:
 		## Output to screen:
-		print( " * {}".format(msg ) )
+		print( f" * {msg}" )
 		## And again, to log file:
 		if logFH == None:
 			## Log file hasn't been opened yet,
@@ -157,7 +159,7 @@ def debugMessage(msgBare = None, verbBare = None, **keywords):
 				logCache += "\n"
 			logCache += f" * {msg}"
 		else:
-			print( " * {}".format(msg ), file=logFH )
+			print( " * {msg}", file=logFH )
 
 
 
@@ -244,7 +246,7 @@ if (len(argv) > 1):
 	args = argv[1:]
 	## print( "ARGS: %r,  len ARGS: %d" % (args, len(args)) )
 	##
-	## Skip script name (argv[0]) when parsing:
+	## Skip script name (argv[0]) when parsing args:
 	parseArgs( argv[1:] )
 
 
@@ -258,7 +260,7 @@ NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
 
 
 ## #######################################################
-## Open DEFAULT log file
+## Open log file
 ##
 ## User may choose a different one via --log so we'll have
 ## to deal with that scenario - using var logCache
@@ -367,8 +369,7 @@ class ClientThread(Thread):
 
 
 		query_domain = oneQuery.getQuestionNameCanonical().lower()
-		debugMessage( msg=f"Question is for: {query_domain.decode()}",
-			verb=1)
+		debugMessage( f"Question is for: {query_domain.decode()}", 1)
 
 		## Check for a black-holed domain name:
 		nxdomainFound = False
@@ -387,7 +388,9 @@ class ClientThread(Thread):
 		"my.ip" gets real reply,
 		possibly-valid but unknown domains get SERVFAIL, i.e. "don't know"
 		"""
-		debugMessage( f"nxdomainFound: {nxdomainFound}", 4)
+		debugMessage( f"nxdomainFound: {nxdomainFound} "
+			+ f"for {query_domain.decode()}"
+			, 4)
 
 		if not nxdomainFound:
 			if query_domain[0:5].decode() == 'my.ip':
@@ -431,7 +434,7 @@ class ClientThread(Thread):
 				oneQuery.addAdditional()
 			else:
 				## Standard reply for non-recursive "Not Found"
-				## Test this via: dig cbc.ca @8.8.8.8 +norecurse
+				## Test this via: dig @8.8.8.8 +norecurse cbc.ca
 				oneQuery.SERVFAIL()
 
 
@@ -448,12 +451,8 @@ class ClientThread(Thread):
 		s.sendto(retval, (client_ip, client_port))
 
 
-		## NOW debugMessage also outputs to log file...
-		## This goes to log file:
-		## print( time.strftime('%Y-%m-%d %H:%M:%S', time.localtime() ),
-		## 	query_domain, nxdomainFound, file=logFH
-		## 	)
 		logFH.flush()
+		## NOW debugMessage also outputs to log file...
 		debugMessage( f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime() )} "
 			+ f"query_domain:{query_domain.decode()} "
 			+ f"NXDOMAIN:{nxdomainFound}", 4
@@ -669,9 +668,6 @@ class DNSquery:
 		## unpack subset of header to get 0th element of tuple, which
 		## can be OR'd (^) with 128 to set recursion bit off:
 		self.query_byte_4 = unpack('!B', self.query_header[3:4])[0] ^ 128
-		## self.query_header = self.query_header[:3] \
-		##	+ pack('!B', self.query_byte_4) \
-		##	+ self.query_header[5:]
 		debugMessage(msg="byte 4 w/ recursion flag:"
 			+ format(self.query_byte_4, '08b'),
 			verb=4)
