@@ -61,7 +61,10 @@ verbosityGlobal = 2
 NXDOMAINfileTimestamp = 0
 ## Can change with --config switch
 logFile = '/var/log/dns-blackhole.log'
-## logFile = './dns-blackhole.log'
+logFH = None
+## If log file hasn't been open, but messages need logging,
+## cache them here until file open:
+logCache = ""
 
 
 
@@ -141,8 +144,20 @@ def debugMessage(msgBare = None, verbBare = None, **keywords):
 	## debugMessage("Important Message!", 0)
 	## But, if it's merely a debug notice, not normally displayed, use
 	## debugMessage("blah blah blah", 4)
+	global logCache
 	if verbosityLocal <= verbosityGlobal:
+		## Output to screen:
 		print( " * {}".format(msg ) )
+		## And again, to log file:
+		if logFH == None:
+			## Log file hasn't been opened yet,
+			## Cache messages until it is:
+			## If there is already cached message(s), prepend new-line:
+			if len(logCache) > 0:
+				logCache += "\n"
+			logCache += f" * {msg}"
+		else:
+			print( " * {}".format(msg ), file=logFH )
 
 
 
@@ -242,6 +257,31 @@ NXDOMAINfile = re.sub('//', '/', CONFDIR + '/NXDOMAIN.list' )
 
 
 
+## #######################################################
+## Open DEFAULT log file
+##
+## User may choose a different one via --log so we'll have
+## to deal with that scenario - using var logCache
+##
+try:
+	## logFH = open(logFile, 'ab')	## append, binary (unlikely useful)
+	logFH = open(logFile, 'a')	## append
+	## debugMessage requires logFH to be defined already!
+	##
+	## If logFH isn't set, debugMessage uses logCache instead.
+	##
+	## Time to log cached log messages:
+	if len(logCache) > 0:
+		print( logCache, file=logFH)
+		logCache = ""
+
+	## parseArgs set location / value of logFH, so don't open before parseArgs:
+	debugMessage( msg=f"Opened log file {logFile}", verb=2 )
+except:
+	## debugMessage( f"ERROR: {exc_info()[1]}", 0 )
+	print( f"ERROR: {exc_info()[1]}" )
+	raise SystemExit
+
 
 
 ## #######################################################
@@ -290,21 +330,6 @@ loadNXDOMAINfile()
 
 
 
-## #######################################################
-## Open log file
-##
-try:
-	## logFH = open(logFile, 'ab')	## append, binary (unlikely useful)
-	logFH = open(logFile, 'a')	## append
-	## print( "Opened log file %s" % logFile )
-	debugMessage( f"Opened log file {logFile}", 2 )
-except:
-	debugMessage( f"ERROR: {exc_info()[1]}", 0 )
-	raise SystemExit
-
-
-
-
 
 
 
@@ -324,7 +349,7 @@ class ClientThread(Thread):
 		self.ip = ip
 		self.port = port
 		debugMessage(msg="---------------------------\n"
-			+ f"[+] New thread started for {ip}:{str(port)}",
+			+ f" * New thread started for {ip}:{str(port)}",
 			verb=2)
 
 
@@ -423,10 +448,11 @@ class ClientThread(Thread):
 		s.sendto(retval, (client_ip, client_port))
 
 
+		## NOW debugMessage also outputs to log file...
 		## This goes to log file:
-		print( time.strftime('%Y-%m-%d %H:%M:%S', time.localtime() ),
-			query_domain, nxdomainFound, file=logFH
-			)
+		## print( time.strftime('%Y-%m-%d %H:%M:%S', time.localtime() ),
+		## 	query_domain, nxdomainFound, file=logFH
+		## 	)
 		logFH.flush()
 		debugMessage( f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime() )} "
 			+ f"query_domain:{query_domain.decode()} "
@@ -520,7 +546,7 @@ class DNSquery:
 		self.addl_rec_count = self.query_header[10:12]
 		self.addl_rec_count, = unpack('!H', self.addl_rec_count)
 		debugMessage( "Received query's addl_rec_count: "
-			+ f"{str(self.addl_rec_count)}", 2)
+			+ f"{str(self.addl_rec_count)}", 4)
 		##
 		## NOTE: "dig" has this set to 1 addl record, and most
 		## servers send it back unchanged, without an addl record
@@ -648,7 +674,7 @@ class DNSquery:
 		##	+ self.query_header[5:]
 		debugMessage(msg="byte 4 w/ recursion flag:"
 			+ format(self.query_byte_4, '08b'),
-			verb=2)
+			verb=4)
 
 
 
@@ -954,16 +980,13 @@ except:
 
 ## #######################################################
 ## Log start time to log file
-## #######################################################
+##
 try:
-	## print >> logFH, time.strftime('%Y-%m-%d %H:%M:%S'), \
-	##		"STARTED LISTENING"
-	print( time.strftime('%Y-%m-%d %H:%M:%S'), "STARTED LISTENING",
-		file=logFH
-		)
+	## Now, debugMessage also outputs to log file:
+	debugMessage( f"{time.strftime('%Y-%m-%d %H:%M:%S')} STARTED LISTENING", 1)
 
 except:
-	print( "\nERROR writing to log file: ", logFH)
+	debugMessage( f"\nERROR writing to log file {logFH}", 0)
 	raise SystemExit
 
 
@@ -975,9 +998,12 @@ except:
 threads = []
 
 while(True):
-	## data = conn.recv(BUFFER_SIZE)
-	(data, (client_ip, client_port)) = s.recvfrom(BUFFER_SIZE)
-	## client_ip, client_port = (client_ip_port)
+	try:
+		(data, (client_ip, client_port)) = s.recvfrom(BUFFER_SIZE)
+	except KeyboardInterrupt:
+		debugMessage( f"\n * Exiting now: caught keyboard interrupt.", 1)
+		raise SystemExit
+
 	if not data:
 		debugMessage( f"No data sent from connection at {client_ip}", 3)
 		break
