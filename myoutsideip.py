@@ -469,6 +469,15 @@ class ClientThread(Thread):
 				)
 			)
 		oneQuery.addAdditional()
+		oneQuery.ResourceRec.append(
+			oneQuery.createResourceRecord(oneQuery.QNames,
+				pack('!H', 16),
+				oneQuery.QClass,
+				86400,
+				['curl --location kwvoip.ca/my.ip/']
+				)
+			)
+		oneQuery.addAdditional()
 
 
 		retval = oneQuery.getHeader()

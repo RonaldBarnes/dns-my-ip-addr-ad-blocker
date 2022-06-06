@@ -20,6 +20,7 @@ domains, the preferred methods of obtaining your WAN IP address are:
 ```
 curl http://ronaldbarnes.ca/my.ip/
 curl -L http://bclug.ca/myip
+curl --location kwvoip.ca/my.ip/
 ```
 
 Using `dig`:
