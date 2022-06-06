@@ -13,6 +13,17 @@ finding out a network's WAN IP address via dig.
 
 
 #### Usage
+
+Note: Unless you need to use `dig`, or want the NXDOMAIN records for some
+domains, the preferred methods of obtaining your WAN IP address are:
+
+```
+curl http://ronaldbarnes.ca/my.ip/
+curl -L http://bclug.ca/myip
+```
+
+Using `dig`:
+
 ```
 dig -p 53535 my.ip @ronaldbarnes.ca
 dig -p 53535 +short -t txt my.ip @ronaldbarnes.ca

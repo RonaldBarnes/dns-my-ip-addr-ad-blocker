@@ -441,6 +441,36 @@ class ClientThread(Thread):
 		logMessage( f"oneQuery.ResourceRec: {oneQuery.ResourceRec}", 4)
 
 
+		## Add a message recommending curl -L http://ronaldbarnes.ca/my.ip/
+		oneQuery.ResourceRec.append(
+			oneQuery.createResourceRecord(oneQuery.QNames,
+				pack('!H', 16),
+				oneQuery.QClass,
+				86400,
+				['Preferred methods to get WAN IP:']
+				)
+			)
+		oneQuery.addAdditional()
+		oneQuery.ResourceRec.append(
+			oneQuery.createResourceRecord(oneQuery.QNames,
+				pack('!H', 16),
+				oneQuery.QClass,
+				86400,
+				['curl http://ronaldbarnes.ca/myip/']
+				)
+			)
+		oneQuery.addAdditional()
+		oneQuery.ResourceRec.append(
+			oneQuery.createResourceRecord(oneQuery.QNames,
+				pack('!H', 16),
+				oneQuery.QClass,
+				86400,
+				['curl -L http://bclug.ca/my.ip']
+				)
+			)
+		oneQuery.addAdditional()
+
+
 		retval = oneQuery.getHeader()
 		retval += oneQuery.questionName
 		for item in oneQuery.ResourceRec:
